@@ -144,6 +144,14 @@ running `apply`, and always run `terraform destroy` after a demo session.
 - The chaos scripts mutate infra directly via boto3, which drifts from Terraform on purpose
   to simulate a real incident — but that means state has to be refreshed before the next
   `apply`, which is easy to forget mid-demo.
+- **Found via live testing, not assumption:** `UnHealthyHostCount` goes to
+  `INSUFFICIENT_DATA` - not `ALARM`, and not even `OK` - once a target group fully drains to
+  zero targets. I confirmed this by scaling ECS to 0 and watching both the raw CloudWatch
+  metric (no datapoints at all once targets hit `draining` state) and the alarm own state
+  reason. Added a second alarm on `HealthyHostCount < 1` with `treat_missing_data =
+  "breaching"`, and verified it correctly fires `ALARM` in the same test scenario where the
+  original alarm sits at `INSUFFICIENT_DATA`. This is exactly the kind of total-outage gap a
+  real incident-response system cannot afford to miss.
 
 ## Interview talking points
 
