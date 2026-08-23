@@ -80,3 +80,24 @@ resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
     ServiceName = var.ecs_service_name
   }
 }
+
+
+resource "aws_cloudwatch_metric_alarm" "healthy_targets_low" {
+  alarm_name          = "${var.project_name}-healthy-targets-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods   = 2
+  metric_name          = "HealthyHostCount"
+  namespace            = "AWS/ApplicationELB"
+  period               = 60
+  statistic            = "Average"
+  threshold            = 1
+  alarm_description    = "Triggers when zero healthy targets are registered - catches total outages that the unhealthy-targets alarm misses"
+  alarm_actions        = [aws_sns_topic.alarms.arn]
+  ok_actions           = [aws_sns_topic.alarms.arn]
+  treat_missing_data   = "breaching"
+
+  dimensions = {
+    TargetGroup  = var.target_group_arn_suffix
+    LoadBalancer = var.alb_arn_suffix
+  }
+}
