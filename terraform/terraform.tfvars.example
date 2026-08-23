@@ -1,0 +1,24 @@
+# Copy this to terraform.tfvars and fill in your own values.
+# Do NOT commit terraform.tfvars (it holds a password) — add it to .gitignore.
+
+aws_region          = "us-east-1"
+project_name        = "infra-whisperer"
+
+# --- Reuse an existing VPC/subnets to save cost (skips creating a new NAT
+# Gateway + EIP, which is the priciest part of a fresh VPC) ---
+# Leave existing_vpc_id commented out / null to have Terraform build a new
+# VPC from scratch instead.
+existing_vpc_id              = "vpc-XXXXXXXXXXXXXXXXX"
+existing_public_subnet_ids   = ["subnet-AAAAAAAAAAAAAAAAA", "subnet-BBBBBBBBBBBBBBBBB"]
+existing_private_subnet_ids  = ["subnet-CCCCCCCCCCCCCCCCC", "subnet-DDDDDDDDDDDDDDDDD"]
+# Public subnets need an Internet Gateway route already attached (for the ALB).
+# Private subnets need NAT/route-table access already in place if ECS tasks
+# need outbound internet (e.g. to pull the container image or call the
+# Anthropic/GitHub APIs from inside a VPC-restricted setup).
+
+# Keep this small — this is a portfolio demo, not a production workload.
+budget_limit_usd    = 25
+budget_alert_email  = "you@example.com"
+alarm_sns_email     = "you@example.com"
+
+db_password         = "CHANGE_ME_use_a_real_secret_or_TF_VAR_db_password_env_var"
