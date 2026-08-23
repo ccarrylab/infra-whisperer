@@ -1,0 +1,4 @@
+anthropic>=0.40.0
+boto3>=1.34.0
+PyGithub>=2.3.0
+python-hcl2>=4.3.0
