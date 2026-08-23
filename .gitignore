@@ -7,3 +7,5 @@ terraform.tfvars
 __pycache__/
 *.pyc
 .env
+tfplan
+*.tfplan
