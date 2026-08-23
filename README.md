@@ -153,9 +153,3 @@ running `apply`, and always run `terraform destroy` after a demo session.
   original alarm sits at `INSUFFICIENT_DATA`. This is exactly the kind of total-outage gap a
   real incident-response system cannot afford to miss.
 
-## Interview talking points
-
-- Why the human-approval gate exists (production safety, auditability, trust)
-- Why confidence-ranked hypotheses beat a single diagnosis (mirrors real incident response)
-- How this maps directly onto FDE work: understand a client's existing infra fast, diagnose
-  issues under time pressure, communicate clearly to non-engineers, ship a safe fix
