@@ -7,13 +7,6 @@ resource "aws_security_group" "service" {
   description = "ECS service SG - the chaos scenario security_group mutates this rule"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "From ALB only"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [var.alb_security_group_id]
-  }
 
   egress {
     from_port   = 0
@@ -23,6 +16,16 @@ resource "aws_security_group" "service" {
   }
 
   tags = { Name = "${var.project_name}-svc-sg" }
+}
+
+
+resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
+  security_group_id            = aws_security_group.service.id
+  description                  = "From ALB only"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.alb_security_group_id
 }
 
 resource "aws_iam_role" "execution" {
