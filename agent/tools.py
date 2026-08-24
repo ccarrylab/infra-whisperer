@@ -223,6 +223,19 @@ TOOL_DEFINITIONS = [
             "required": ["log_group_name"],
         },
     },
+        {
+        "name": "query_ecs_service_events",
+        "description": "Return recent ECS service events, deployment status, and running/pending/desired task counts. ALWAYS check this in addition to query_cloudwatch and query_log_group - some incidents (deployment failures, IAM permission errors, task placement failures) are invisible to CloudWatch alarms because old healthy tasks keep serving traffic during a failed rolling deployment, and invisible to log tools because the failure is what prevents new logs from being written in the first place. This tool is often the ONLY place such incidents are visible.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "cluster_name": {"type": "string"},
+                "service_name": {"type": "string"},
+                "max_events": {"type": "integer", "default": 15},
+            },
+            "required": ["cluster_name", "service_name"],
+        },
+    },
     {
         "name": "read_terraform_state",
         "description": "Return the current Terraform state as JSON, to cross-reference against observed symptoms and find root cause (e.g. a mutated security group rule).",
@@ -264,6 +277,7 @@ TOOL_DEFINITIONS = [
 TOOL_IMPLEMENTATIONS = {
     "query_cloudwatch": query_cloudwatch,
     "query_log_group": query_log_group,
+    "query_ecs_service_events": query_ecs_service_events,
     "read_terraform_state": read_terraform_state,
     "propose_tf_diff": propose_tf_diff,
     "open_github_pr": open_github_pr,
