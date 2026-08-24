@@ -2,7 +2,7 @@
 Tool implementations for Infra Whisperer's agent loop.
 
 Each function here corresponds to a tool definition passed to Claude's
-tool-use API. Keep these narrow and single-purpose — the agent's job is to
+tool-use API. Keep these narrow and single-purpose - the agent's job is to
 compose them, not for any one tool to do too much.
 """
 
@@ -12,8 +12,22 @@ from datetime import datetime, timedelta, timezone
 
 import boto3
 
-cloudwatch = boto3.client("cloudwatch")
-logs_client = boto3.client("logs")
+_cloudwatch = None
+_logs_client = None
+
+
+def _get_cloudwatch():
+    global _cloudwatch
+    if _cloudwatch is None:
+        _cloudwatch = boto3.client("cloudwatch")
+    return _cloudwatch
+
+
+def _get_logs_client():
+    global _logs_client
+    if _logs_client is None:
+        _logs_client = boto3.client("logs")
+    return _logs_client
 
 
 # ---------------------------------------------------------------------------
@@ -23,13 +37,14 @@ logs_client = boto3.client("logs")
 def query_cloudwatch(alarm_name_prefix: str, lookback_minutes: int = 15) -> dict:
     """Return the state and recent history of alarms matching a prefix.
 
-    This is the agent's "what's on fire" tool — it's the first thing called
+    This is the agent's "what's on fire" tool - it's the first thing called
     when a scan or webhook indicates an incident may be in progress.
     """
-    resp = cloudwatch.describe_alarms(AlarmNamePrefix=alarm_name_prefix)
+    cw = _get_cloudwatch()
+    resp = cw.describe_alarms(AlarmNamePrefix=alarm_name_prefix)
     alarms = []
     for alarm in resp.get("MetricAlarms", []):
-        history = cloudwatch.describe_alarm_history(
+        history = cw.describe_alarm_history(
             AlarmName=alarm["AlarmName"],
             HistoryItemType="StateUpdate",
             StartDate=datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes),
@@ -59,7 +74,7 @@ def query_log_group(log_group_name: str, filter_pattern: str = "", lookback_minu
     AccessDenied messages) before proposing a diagnosis.
     """
     start_time = int((datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)).timestamp() * 1000)
-    resp = logs_client.filter_log_events(
+    resp = _get_logs_client().filter_log_events(
         logGroupName=log_group_name,
         startTime=start_time,
         filterPattern=filter_pattern,
@@ -71,6 +86,7 @@ def query_log_group(log_group_name: str, filter_pattern: str = "", lookback_minu
             for e in resp.get("events", [])
         ]
     }
+
 
 def query_ecs_service_events(cluster_name: str, service_name: str, max_events: int = 15) -> dict:
     """Return the most recent ECS service events - deployment status, task start/stop
@@ -113,6 +129,8 @@ def query_ecs_service_events(cluster_name: str, service_name: str, max_events: i
             for e in events
         ],
     }
+
+
 # ---------------------------------------------------------------------------
 # Tool: read_terraform_state
 # ---------------------------------------------------------------------------
@@ -121,7 +139,7 @@ def read_terraform_state(terraform_dir: str = "../terraform") -> dict:
     """Return the current Terraform state as JSON.
 
     The agent cross-references this against the CloudWatch/log evidence to
-    find root cause — e.g. "the security group ingress rule for port 5432
+    find root cause - e.g. "the security group ingress rule for port 5432
     was removed" is visible here even if the symptom (connection timeouts)
     only shows up in the app logs.
     """
@@ -142,7 +160,7 @@ def read_terraform_state(terraform_dir: str = "../terraform") -> dict:
 def propose_tf_diff(file_path: str, explanation: str, diff: str) -> dict:
     """Record a proposed Terraform change for human review.
 
-    This tool does NOT apply anything — it only stages a diff and an
+    This tool does NOT apply anything - it only stages a diff and an
     explanation. The human-approval gate (open_github_pr + manual merge +
     manual `terraform apply`) is what keeps this safe to run against real
     infrastructure.
@@ -163,7 +181,7 @@ def open_github_pr(branch_name: str, title: str, body: str, file_path: str, new_
     """Open a PR with the proposed fix. Requires GITHUB_TOKEN and GITHUB_REPO env vars.
 
     Kept as a separate, explicit step from propose_tf_diff so the "diagnose"
-    and "act" phases are auditable independently — useful both for safety
+    and "act" phases are auditable independently - useful both for safety
     and for narrating the flow in an interview demo.
     """
     import os
@@ -223,7 +241,7 @@ TOOL_DEFINITIONS = [
             "required": ["log_group_name"],
         },
     },
-        {
+    {
         "name": "query_ecs_service_events",
         "description": "Return recent ECS service events, deployment status, and running/pending/desired task counts. ALWAYS check this in addition to query_cloudwatch and query_log_group - some incidents (deployment failures, IAM permission errors, task placement failures) are invisible to CloudWatch alarms because old healthy tasks keep serving traffic during a failed rolling deployment, and invisible to log tools because the failure is what prevents new logs from being written in the first place. This tool is often the ONLY place such incidents are visible.",
         "input_schema": {

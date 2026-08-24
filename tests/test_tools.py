@@ -9,9 +9,7 @@ actually validated this project - see the README's "found via live
 testing" sections for that).
 
 Run with:
-    cd agent
-    pip install pytest
-    pytest ../tests/test_tools.py -v
+    pytest tests/test_tools.py -v
 """
 
 import json
@@ -42,7 +40,7 @@ class TestQueryCloudwatch:
         }
         mock_cloudwatch.describe_alarm_history.return_value = {"AlarmHistoryItems": []}
 
-        with patch.object(tools, "cloudwatch", mock_cloudwatch):
+        with patch.object(tools, "_get_cloudwatch", return_value=mock_cloudwatch):
             result = tools.query_cloudwatch("infra-whisperer")
 
         assert len(result["alarms"]) == 1
@@ -55,7 +53,7 @@ class TestQueryCloudwatch:
         mock_cloudwatch = MagicMock()
         mock_cloudwatch.describe_alarms.return_value = {"MetricAlarms": []}
 
-        with patch.object(tools, "cloudwatch", mock_cloudwatch):
+        with patch.object(tools, "_get_cloudwatch", return_value=mock_cloudwatch):
             result = tools.query_cloudwatch("nonexistent-prefix")
 
         assert result == {"alarms": []}
@@ -71,7 +69,7 @@ class TestQueryLogGroup:
             ]
         }
 
-        with patch.object(tools, "logs_client", mock_logs):
+        with patch.object(tools, "_get_logs_client", return_value=mock_logs):
             result = tools.query_log_group("/ecs/infra-whisperer")
 
         assert len(result["events"]) == 2
