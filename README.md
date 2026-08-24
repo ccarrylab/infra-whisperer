@@ -1,5 +1,8 @@
 # Infra Whisperer
 
+![Tests](https://github.com/ccarrylab/infra-whisperer/actions/workflows/tests.yml/badge.svg)
+
+
 I built this to give myself a real answer to "show me you can do FDE work" instead of a
 chatbot demo. It's an agent that watches a live AWS environment, figures out why something
 broke by cross-referencing CloudWatch, logs, and Terraform state, explains the diagnosis in
