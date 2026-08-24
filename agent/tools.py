@@ -206,14 +206,14 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "open_github_pr",
-        "description": "Open a GitHub PR containing the proposed fix, so a human can review and merge it before anything is applied.",
+        "description": "Open a GitHub PR containing the proposed fix, so a human can review and merge it before anything is applied. IMPORTANT: file_path must be a path RELATIVE TO THE REPOSITORY ROOT (e.g. 'terraform/modules/rds/main.tf'), never a local filesystem path with '../' - GitHub's API will 404 on '../' prefixed paths since they don't exist in the repo's file tree, even though the same '../' style path is correct for local tools like read_terraform_state.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "branch_name": {"type": "string"},
                 "title": {"type": "string"},
                 "body": {"type": "string"},
-                "file_path": {"type": "string"},
+                "file_path": {"type": "string", "description": "Path relative to the repo root, no '../' prefix - e.g. 'terraform/modules/rds/main.tf'"},
                 "new_content": {"type": "string"},
             },
             "required": ["branch_name", "title", "body", "file_path", "new_content"],
