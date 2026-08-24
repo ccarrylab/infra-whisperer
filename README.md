@@ -152,4 +152,14 @@ running `apply`, and always run `terraform destroy` after a demo session.
   "breaching"`, and verified it correctly fires `ALARM` in the same test scenario where the
   original alarm sits at `INSUFFICIENT_DATA`. This is exactly the kind of total-outage gap a
   real incident-response system cannot afford to miss.
+- **A real blind spot, found by testing the iam_role chaos scenario:** when I detached the
+  ECS execution role policy and forced a deployment, new tasks failed with an IAM
+  AccessDeniedException on logs:CreateLogStream - a genuine live incident. But it never
+  showed up in any CloudWatch alarm (metrics stayed healthy the whole time, since the old
+  tasks kept serving traffic under the rolling deployment minimumHealthyPercent setting),
+  and the agent log-reading tool had nothing to find either, since the failure is precisely
+  what prevented new logs from being written. The agent re-diagnosed the same old
+  max_connections risk instead of catching the actual incident, and opened a duplicate PR.
+  The real fix is not in this codebase yet: the agent needs a tool that reads ECS service
+  events directly, since that is the only place this class of failure is visible.
 
