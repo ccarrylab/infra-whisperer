@@ -162,4 +162,16 @@ running `apply`, and always run `terraform destroy` after a demo session.
   max_connections risk instead of catching the actual incident, and opened a duplicate PR.
   The real fix is not in this codebase yet: the agent needs a tool that reads ECS service
   events directly, since that is the only place this class of failure is visible.
+- **A more subtle failure mode, found right after fixing the one above:** once I added the
+  ECS-events tool and re-ran the agent, it did check the new tool - but then wove those real
+  events into an incorrect story. It saw task churn from an unrelated forced redeployment
+  (me testing the IAM fix) and, because max_connections=20 already existed in Terraform
+  state, built a plausible-sounding narrative connecting the two: "the deploy caused a
+  connection spike that exceeded max_connections." There was no actual evidence for this -
+  no DB error logs, no connections alarm activity - just two things that happened to be
+  temporally close. More tooling did not just close a blind spot, it also gave the agent
+  more raw material to build a confident-sounding but factually wrong causal story from.
+  This is exactly why the human-approval gate matters: an agent that sounds sure of itself
+  is not the same as an agent that is right, and a PR still has to be checked against real
+  evidence before it is merged, not just trusted because the write-up reads well.
 
