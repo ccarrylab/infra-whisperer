@@ -72,7 +72,47 @@ def query_log_group(log_group_name: str, filter_pattern: str = "", lookback_minu
         ]
     }
 
+def query_ecs_service_events(cluster_name: str, service_name: str, max_events: int = 15) -> dict:
+    """Return the most recent ECS service events - deployment status, task start/stop
+    reasons, and placement failures.
 
+    This is the tool that catches incidents CloudWatch alarms and app logs both miss:
+    a rolling deployment can fail repeatedly (bad task definition, missing IAM permission,
+    image pull failure) while the OLD tasks keep serving traffic under
+    minimumHealthyPercent, so no alarm ever fires and no new logs get written by the
+    failing tasks. ECS service events are often the only place this kind of incident is
+    visible at all.
+    """
+    ecs_client = boto3.client("ecs")
+    resp = ecs_client.describe_services(cluster=cluster_name, services=[service_name])
+    services = resp.get("services", [])
+    if not services:
+        return {"error": f"service {service_name} not found in cluster {cluster_name}"}
+
+    service = services[0]
+    events = service.get("events", [])[:max_events]
+    deployments = service.get("deployments", [])
+
+    return {
+        "desired_count": service.get("desiredCount"),
+        "running_count": service.get("runningCount"),
+        "pending_count": service.get("pendingCount"),
+        "deployments": [
+            {
+                "status": d.get("status"),
+                "rollout_state": d.get("rolloutState"),
+                "rollout_state_reason": d.get("rolloutStateReason"),
+                "failed_tasks": d.get("failedTasks"),
+                "desired_count": d.get("desiredCount"),
+                "running_count": d.get("runningCount"),
+            }
+            for d in deployments
+        ],
+        "recent_events": [
+            {"timestamp": str(e["createdAt"]), "message": e["message"]}
+            for e in events
+        ],
+    }
 # ---------------------------------------------------------------------------
 # Tool: read_terraform_state
 # ---------------------------------------------------------------------------
