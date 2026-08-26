@@ -155,9 +155,14 @@ export GITHUB_TOKEN=...
 export GITHUB_REPO=ccarrylab/infra-whisperer
 export AWS_REGION=us-east-1
 
-# 4. Run a live demo
-python ../chaos/inject.py --scenario security_group
-python agent.py --watch
+# 4. Run a live demo - the easiest way is the scripted end-to-end version,
+# validated live multiple times during testing:
+cd ..
+./demo.sh
+
+# Or run the steps manually:
+python chaos/inject.py --scenario security_group --sg-id <your-ecs-service-sg-id>
+cd agent && python agent.py --diagnose-now
 # agent detects the incident, diagnoses it, and opens a PR with the fix
 
 # 5. Tear down when done (protects your AWS credit)
