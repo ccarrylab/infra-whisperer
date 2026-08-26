@@ -17,6 +17,30 @@ have something real to break — are mine. I think that split is honestly a dece
 what FDE work looks like now: knowing how to direct an AI agent well, and knowing which
 decisions you don't hand off to it.
 
+## What I found by actually breaking this
+
+I didn't just build this and call it done - I ran three separate live incidents against
+real AWS infrastructure and pushed past the first clean result each time. That surfaced
+three findings, each more interesting than the last:
+
+- **A monitoring gap:** `UnHealthyHostCount` never fires on a fully-drained target group -
+  it goes to `INSUFFICIENT_DATA`, not `ALARM`. Found by scaling to zero and watching it not
+  fire. Fixed with a second alarm, verified against a live outage.
+- **An agent blind spot:** an IAM policy detachment broke every new deployment with zero
+  CloudWatch alarm activity, because the old healthy tasks kept serving traffic the whole
+  time. The agent had nothing to see. Fixed by adding an ECS-events tool.
+- **A reasoning failure the fix itself caused:** right after adding that tool, the agent
+  wove real ECS events into a plausible-sounding but factually wrong root cause - proof
+  that more tooling can mean more material for a confident wrong answer, not just fewer
+  blind spots. This is the real argument for the human-approval gate.
+
+Full write-ups with evidence are in "What I'd do differently at scale" below.
+
+**Rough numbers from the security-group incident:** manually correlating an ALB alarm,
+ECS events, and Terraform state to find a revoked security group rule is a 10-15 minute
+job for an engineer who already knows the stack. The agent went from "incident detected"
+to a confidence-ranked root cause and an open PR in under a minute of API time.
+
 ## The problem
 
 When production breaks, engineers burn hours correlating CloudWatch alarms, logs, IAM
