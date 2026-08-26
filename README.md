@@ -65,30 +65,42 @@ Deployed Engineer gets hired to eliminate for a client.
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph Infra["Real AWS infrastructure"]
+        ALB[ALB] --> ECS[ECS Fargate service]
+        ECS --> RDS[(RDS Postgres)]
+    end
+
+    Chaos["chaos/inject.py<br/>injects real failures"] -.-> Infra
+
+    Infra --> CW[CloudWatch alarms]
+    Infra --> EV[ECS service events]
+    Infra --> LG[CloudWatch logs]
+    Infra --> TF[Terraform state]
+
+    subgraph AgentBox["agent/agent.py - Claude tool-use loop"]
+        Diag[Confidence-ranked diagnosis]
+    end
+
+    CW --> Diag
+    EV --> Diag
+    LG --> Diag
+    TF --> Diag
+
+    Diag --> PR[GitHub PR opened]
+    PR --> Human{Human reviews}
+    Human -->|merge| Apply[terraform apply]
+    Human -->|reject| NoOp[Nothing changes]
+
+    TF -.->|"proactive finding: max_connections=20<br/>found with zero active incident"| Diag
+    CW -.->|"real incident: SG rule revoked<br/>detected in 240s, 85% confidence, real PR opened"| Diag
+    EV -.->|"blind spot found here: IAM policy removed<br/>invisible to CloudWatch, only ECS events caught it"| Diag
 ```
-                        ┌─────────────────────┐
-   chaos/inject.py ───► │   AWS (Terraform)    │
-   (breaks something)   │  ALB → ECS → RDS      │
-                        │  + CloudWatch alarms  │
-                        └──────────┬────────────┘
-                                   │ metrics/logs
-                                   ▼
-                        ┌─────────────────────┐
-                        │   agent/agent.py      │
-                        │  (Claude, tool-use)   │
-                        │  1. query_cloudwatch  │
-                        │  2. read_tf_state     │
-                        │  3. rank hypotheses   │
-                        │  4. propose_tf_diff   │
-                        │  5. open_github_pr    │
-                        └──────────┬────────────┘
-                                   │
-                                   ▼
-                         Human reviews + merges PR
-                                   │
-                                   ▼
-                         terraform apply (agent-proposed fix)
-```
+
+The three dotted lines above map to the three findings in the section above - this diagram
+is literally the shape of what actually happened during testing, not a generic architecture
+sketch.
 
 ## Repo layout
 
