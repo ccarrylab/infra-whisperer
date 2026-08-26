@@ -17,6 +17,13 @@ have something real to break — are mine. I think that split is honestly a dece
 what FDE work looks like now: knowing how to direct an AI agent well, and knowing which
 decisions you don't hand off to it.
 
+## Watch it work
+
+[![asciicast](https://asciinema.org/a/gFKt7EF5akEFAxOG.svg)](https://asciinema.org/a/gFKt7EF5akEFAxOG)
+
+A real run: chaos injection, alarm detection, and the agent full diagnosis - captured
+live, not staged. Idle time compressed for watchability; nothing else edited.
+
 ## What I found by actually breaking this
 
 I didn't just build this and call it done - I ran three separate live incidents against
