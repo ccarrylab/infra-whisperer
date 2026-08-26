@@ -97,7 +97,7 @@ resource "aws_ecs_service" "this" {
 
   load_balancer {
     target_group_arn = var.alb_target_group_arn
-    container_name    = "${var.project_name}-app"
-    container_port    = var.container_port
+    container_name   = "${var.project_name}-app"
+    container_port   = var.container_port
   }
 }

@@ -13,15 +13,15 @@ resource "aws_sns_topic_subscription" "email" {
 resource "aws_cloudwatch_metric_alarm" "unhealthy_targets" {
   alarm_name          = "${var.project_name}-unhealthy-targets"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods   = 2
-  metric_name          = "UnHealthyHostCount"
-  namespace            = "AWS/ApplicationELB"
-  period               = 60
-  statistic            = "Average"
-  threshold            = 0
-  alarm_description    = "Triggers when ALB targets go unhealthy — likely security group or app-level issue"
-  alarm_actions        = [aws_sns_topic.alarms.arn]
-  ok_actions            = [aws_sns_topic.alarms.arn]
+  evaluation_periods  = 2
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 0
+  alarm_description   = "Triggers when ALB targets go unhealthy — likely security group or app-level issue"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+  ok_actions          = [aws_sns_topic.alarms.arn]
 
   dimensions = {
     TargetGroup  = var.target_group_arn_suffix
@@ -32,14 +32,14 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_targets" {
 resource "aws_cloudwatch_metric_alarm" "high_5xx" {
   alarm_name          = "${var.project_name}-alb-5xx"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods   = 2
-  metric_name          = "HTTPCode_Target_5XX_Count"
-  namespace            = "AWS/ApplicationELB"
-  period               = 60
-  statistic            = "Sum"
-  threshold            = 5
-  alarm_description    = "Triggers on a spike in 5xx responses"
-  alarm_actions         = [aws_sns_topic.alarms.arn]
+  evaluation_periods  = 2
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "Triggers on a spike in 5xx responses"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
 
   dimensions = {
     LoadBalancer = var.alb_arn_suffix
@@ -49,14 +49,14 @@ resource "aws_cloudwatch_metric_alarm" "high_5xx" {
 resource "aws_cloudwatch_metric_alarm" "db_connections_high" {
   alarm_name          = "${var.project_name}-db-connections-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods   = 2
-  metric_name          = "DatabaseConnections"
-  namespace            = "AWS/RDS"
-  period               = 60
-  statistic            = "Average"
-  threshold            = 15 # close to the 20 max_connections cap set in the rds module
-  alarm_description    = "Triggers when DB connections approach the configured max — feeds the 'connection_pool' chaos scenario"
-  alarm_actions         = [aws_sns_topic.alarms.arn]
+  evaluation_periods  = 2
+  metric_name         = "DatabaseConnections"
+  namespace           = "AWS/RDS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 15 # close to the 20 max_connections cap set in the rds module
+  alarm_description   = "Triggers when DB connections approach the configured max — feeds the 'connection_pool' chaos scenario"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
 
   dimensions = {
     DBInstanceIdentifier = var.db_instance_id
@@ -66,14 +66,14 @@ resource "aws_cloudwatch_metric_alarm" "db_connections_high" {
 resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
   alarm_name          = "${var.project_name}-ecs-cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods   = 2
-  metric_name          = "CPUUtilization"
-  namespace            = "AWS/ECS"
-  period               = 60
-  statistic            = "Average"
-  threshold            = 85
-  alarm_description    = "Triggers on sustained high CPU across the ECS service"
-  alarm_actions         = [aws_sns_topic.alarms.arn]
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/ECS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 85
+  alarm_description   = "Triggers on sustained high CPU across the ECS service"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
 
   dimensions = {
     ClusterName = var.ecs_cluster_name
@@ -85,16 +85,16 @@ resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {
 resource "aws_cloudwatch_metric_alarm" "healthy_targets_low" {
   alarm_name          = "${var.project_name}-healthy-targets-low"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods   = 2
-  metric_name          = "HealthyHostCount"
-  namespace            = "AWS/ApplicationELB"
-  period               = 60
-  statistic            = "Average"
-  threshold            = 1
-  alarm_description    = "Triggers when zero healthy targets are registered - catches total outages that the unhealthy-targets alarm misses"
-  alarm_actions        = [aws_sns_topic.alarms.arn]
-  ok_actions           = [aws_sns_topic.alarms.arn]
-  treat_missing_data   = "breaching"
+  evaluation_periods  = 2
+  metric_name         = "HealthyHostCount"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 1
+  alarm_description   = "Triggers when zero healthy targets are registered - catches total outages that the unhealthy-targets alarm misses"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+  ok_actions          = [aws_sns_topic.alarms.arn]
+  treat_missing_data  = "breaching"
 
   dimensions = {
     TargetGroup  = var.target_group_arn_suffix

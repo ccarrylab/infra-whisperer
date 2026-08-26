@@ -39,11 +39,11 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.db.id]
 
   # Demo-project settings - keep cost near zero and allow easy teardown.
-  skip_final_snapshot       = true
-  deletion_protection       = false
-  backup_retention_period   = 0
-  multi_az                  = false
-  publicly_accessible       = false
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  backup_retention_period = 0
+  multi_az                = false
+  publicly_accessible     = false
 
   # Deliberately low, realistic max_connections stress point for the
   # connection_pool chaos scenario.
