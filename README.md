@@ -29,6 +29,26 @@ concerns, not just praise. Unedited except for this note. Generated 2026-08-26.*
 > 
 > What I'd want a skeptical engineer to ask the person who built this: *"Walk me through the IAM scenario — what did the agent actually output, what did the PR say, and how did you know it was wrong?"* That question has a specific answer documented in the README, and it tests whether the builder understands the failure mode at the level of evidence rather than just acknowledging it exists. If the answer is "I saw the PR, cross-checked it against CloudWatch and found no supporting signals, and rejected it" — that's the right answer, and it means the human-approval gate was actually exercised, not just architected. If the answer gets vague, the gate is theoretical.
 
+## Confidence calibration audit
+
+*The agent was given its own real incident record from this README and asked to grade its
+own stated confidence percentages against what was actually verified true. Not mocked -
+every incident referenced below is real, documented above. Unedited. Generated 2026-08-26.*
+
+> **Incident-by-incident classification:**
+> 
+> 1. **Security-group incident (85% confidence, PR opened):** CONFIRMED CORRECT. The README documents independent verification via a live recovery — chaos scripts injected the failure, the agent diagnosed a revoked SG rule, and the system went from "incident detected" to an open PR in under a minute. The mechanism is specific and reproducible.
+> 
+> 2. **UnHealthyHostCount → INSUFFICIENT_DATA finding (confidence not explicitly stated, but presented as high-certainty):** CONFIRMED CORRECT. Verified by the most rigorous method documented: scaling ECS to zero, watching the raw CloudWatch metric go silent, observing the alarm state reason directly, then confirming the replacement alarm (`HealthyHostCount < 1`, `treat_missing_data = "breaching"`) fires ALARM in the same scenario. This is the only finding in the README the agent itself calls out as one "I could not have generated plausibly without running anything."
+> 
+> 3. **IAM policy detachment incident (agent re-diagnosed max_connections risk instead):** CONFIRMED WRONG. The agent stated confidence in a diagnosis (max_connections risk, duplicate PR) while the actual root cause — IAM AccessDeniedException on logs:CreateLogStream — was invisible to it entirely. The README documents the failure mode precisely: old tasks kept serving traffic, no alarm fired, no logs were written by failing tasks. The agent's stated confidence was not tracking the evidence; it was tracking the absence of contradicting evidence.
+> 
+> 4. **Post-ECS-events-tool misdiagnosis (task churn + max_connections narrative):** CONFIRMED WRONG. The README documents this explicitly: no DB error logs, no connections alarm activity — just temporal proximity. The agent constructed a causally coherent story at apparent confidence, and it was factually wrong. The README specifically flags "the write-up reads well" as not equivalent to "the root cause is correct."
+> 
+> **Calibration verdict:**
+> 
+> This sample is too small — four incidents — to say anything statistically meaningful about calibration in a frequentist sense. But what the actual record shows is this: two of the four cases are confirmed wrong, and in both confirmed-wrong cases, the stated or implied confidence was *not lower* than in the confirmed-correct cases. The 85% figure on the SG incident was right; the confident re-diagnosis in the IAM scenario was wrong; the confident post-ECS-tool narrative was wrong. The confidence percentages did not distinguish these. That's the one pattern the record supports pointing to directly: the stated confidence level is decorative in the sense that it does not reliably predict whether the underlying diagnosis is correct — it predicts how well the available evidence *fits a story*, which is a different thing. The agent itself says this in the README: "I will sound equally confident whether I'm right or wrong." The incident record confirms it, as far as four data points can confirm anything.
+
 ## Watch it work
 
 [![asciicast](https://asciinema.org/a/gFKt7EF5akEFAxOG.svg)](https://asciinema.org/a/gFKt7EF5akEFAxOG)
