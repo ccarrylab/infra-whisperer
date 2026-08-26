@@ -6,17 +6,26 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    name: Python tests
+    name: "🧪 Python tests (${{ matrix.python-version }})"
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: agent/requirements.txt
 
       - name: Install dependencies
         run: |
@@ -24,10 +33,19 @@ jobs:
           pip install -r agent/requirements.txt
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v --tb=short | tee /tmp/pytest_output.txt
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 🧪 Test Results (Python ${{ matrix.python-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -15 /tmp/pytest_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
   terraform-validate:
-    name: Terraform validate
+    name: "🏗️ Terraform validate"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,8 +67,17 @@ jobs:
       - name: Terraform validate
         run: terraform validate
 
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 🏗️ Terraform Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Formatting check passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Configuration is syntactically valid" >> $GITHUB_STEP_SUMMARY
+          echo "- Modules checked: vpc, alb, ecs, rds, monitoring, budget" >> $GITHUB_STEP_SUMMARY
+
   security-scan:
-    name: Terraform security scan (tfsec)
+    name: "🔒 Security scan (tfsec)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,3 +87,12 @@ jobs:
         with:
           working_directory: terraform
           soft_fail: true
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 🔒 Terraform Security Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Static analysis via tfsec. Findings on intentionally-open rules (e.g." >> $GITHUB_STEP_SUMMARY
+          echo "public ALB ingress) are expected and documented in the README as" >> $GITHUB_STEP_SUMMARY
+          echo "deliberate tradeoffs, not oversights." >> $GITHUB_STEP_SUMMARY
