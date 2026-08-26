@@ -11,6 +11,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 
 import boto3
+from confidence_scoring import score_evidence
 
 _cloudwatch = None
 _logs_client = None
@@ -174,6 +175,40 @@ def propose_tf_diff(file_path: str, explanation: str, diff: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool: score_diagnosis_confidence
+# ---------------------------------------------------------------------------
+
+def score_diagnosis_confidence(
+    alarm_correlates: bool = False,
+    terraform_confirms: bool = False,
+    logs_confirm: bool = False,
+    ecs_events_correlate: bool = False,
+    independent_second_signal: bool = False,
+    temporal_only: bool = False,
+    contradicting_evidence: bool = False,
+    no_supporting_evidence: bool = False,
+) -> dict:
+    """Compute an evidence-based confidence score. This replaces free-form
+    confidence percentages with a deterministic score computed from which
+    evidence sources actually agree. Call this BEFORE stating a confidence
+    level in your final diagnosis, and report the returned percentage and
+    breakdown exactly as given - do not substitute your own estimate.
+    """
+    return score_evidence(
+        {
+            "alarm_correlates": alarm_correlates,
+            "terraform_confirms": terraform_confirms,
+            "logs_confirm": logs_confirm,
+            "ecs_events_correlate": ecs_events_correlate,
+            "independent_second_signal": independent_second_signal,
+            "temporal_only": temporal_only,
+            "contradicting_evidence": contradicting_evidence,
+            "no_supporting_evidence": no_supporting_evidence,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: open_github_pr
 # ---------------------------------------------------------------------------
 
@@ -276,6 +311,23 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "score_diagnosis_confidence",
+        "description": "Compute an evidence-based confidence score for a hypothesis. ALWAYS call this before stating a confidence percentage in your final diagnosis - do not invent your own percentage. Set each flag to true only if you have actually observed that evidence in your investigation. Report the returned confidence_percent, supporting_signals, contradicting_signals, and independent_evidence_sources exactly as returned.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "alarm_correlates": {"type": "boolean", "description": "A CloudWatch alarm's state/timing directly supports this hypothesis"},
+                "terraform_confirms": {"type": "boolean", "description": "Terraform state shows the specific misconfiguration or drift matching this hypothesis"},
+                "logs_confirm": {"type": "boolean", "description": "Application or ECS logs contain direct evidence (e.g. an error message) matching this hypothesis"},
+                "ecs_events_correlate": {"type": "boolean", "description": "ECS service events show a specific failure reason matching this hypothesis"},
+                "independent_second_signal": {"type": "boolean", "description": "At least two of the above are true AND come from genuinely independent sources (not just two views of the same underlying fact)"},
+                "temporal_only": {"type": "boolean", "description": "The only evidence is that two events happened close together in time, with no other corroboration - set this honestly even if it feels like it weakens your case"},
+                "contradicting_evidence": {"type": "boolean", "description": "Something you observed actively contradicts this hypothesis"},
+                "no_supporting_evidence": {"type": "boolean", "description": "You are stating this hypothesis without having found supporting evidence for it specifically"},
+            },
+        },
+    },
+    {
         "name": "open_github_pr",
         "description": "Open a GitHub PR containing the proposed fix, so a human can review and merge it before anything is applied. IMPORTANT: file_path must be a path RELATIVE TO THE REPOSITORY ROOT (e.g. 'terraform/modules/rds/main.tf'), never a local filesystem path with '../' - GitHub's API will 404 on '../' prefixed paths since they don't exist in the repo's file tree, even though the same '../' style path is correct for local tools like read_terraform_state.",
         "input_schema": {
@@ -298,5 +350,6 @@ TOOL_IMPLEMENTATIONS = {
     "query_ecs_service_events": query_ecs_service_events,
     "read_terraform_state": read_terraform_state,
     "propose_tf_diff": propose_tf_diff,
+    "score_diagnosis_confidence": score_diagnosis_confidence,
     "open_github_pr": open_github_pr,
 }

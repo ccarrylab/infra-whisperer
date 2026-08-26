@@ -7,12 +7,15 @@ Usage:
 
 The agent:
   1. Polls CloudWatch alarms for the project (query_cloudwatch)
-  2. On an ALARM state, pulls corroborating logs (query_log_group)
-  3. Reads Terraform state to cross-reference infra config (read_terraform_state)
-  4. Asks Claude to produce a confidence-ranked list of root-cause hypotheses
-     and a plain-English explanation
-  5. Stages a Terraform diff for the top hypothesis (propose_tf_diff)
-  6. Opens a PR for human review (open_github_pr) — nothing is ever applied
+  2. Checks ECS service events (query_ecs_service_events) - catches incidents
+     invisible to alarms/logs
+  3. Pulls corroborating logs (query_log_group)
+  4. Reads Terraform state to cross-reference infra config (read_terraform_state)
+  5. Scores confidence per hypothesis using an evidence-based rubric
+     (score_diagnosis_confidence) instead of a free-form LLM guess
+  6. Writes a plain-English explanation of the top hypothesis
+  7. Stages a Terraform diff for the top hypothesis (propose_tf_diff)
+  8. Opens a PR for human review (open_github_pr) - nothing is ever applied
      automatically
 """
 
@@ -40,9 +43,13 @@ Terraform-managed AWS environment. When invoked, you must:
    incidents are visible - do not skip it just because alarms look clean.
 3. Pull relevant logs to corroborate the symptom.
 4. Read Terraform state to find infrastructure-level root causes.
-5. Produce a confidence-ranked list of root-cause hypotheses (not just one
-   guess) - rank them the way a senior engineer would, based on the strength
-   of the evidence for each.
+5. For EACH hypothesis, call score_diagnosis_confidence with honest evidence
+   flags based only on what you actually observed - do not set a flag to
+   true just to make the score higher. Report the tool's returned
+   confidence_percent, supporting_signals, contradicting_signals, and
+   independent_evidence_sources exactly as given. Do NOT state a confidence
+   percentage that did not come from this tool. Rank hypotheses by the
+   scored confidence, not by how the write-up feels.
 6. Write a plain-English explanation of the most likely root cause, suitable
    for a non-technical stakeholder (a VP, not an engineer).
 7. Propose a minimal, safe Terraform diff that fixes the top hypothesis.
@@ -55,8 +62,8 @@ these two independent sources is what real confidence looks like. If you
 already opened a PR for a given root cause in a prior run, check whether the
 same fix still applies before opening a duplicate PR for the same issue.
 
-Be explicit about your confidence level and what evidence would raise or
-lower it. If evidence is ambiguous, say so rather than overstating certainty.
+Be explicit about what evidence would raise or lower each score. If evidence
+is ambiguous, say so rather than overstating certainty.
 """
 
 
@@ -101,7 +108,7 @@ def run_agent_turn(client: anthropic.Anthropic, user_message: str) -> str:
 def diagnose_now(client: anthropic.Anthropic) -> None:
     prompt = (
         f"An alarm may have fired for the '{PROJECT_ALARM_PREFIX}' project. "
-        "Investigate using your tools, produce a confidence-ranked diagnosis, "
+        "Investigate using your tools, produce an evidence-scored diagnosis, "
         "and if you find a clear root cause, propose a fix and open a PR."
     )
     result = run_agent_turn(client, prompt)
