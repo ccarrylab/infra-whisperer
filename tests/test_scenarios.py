@@ -42,7 +42,7 @@ class TestBreakSecurityGroup:
             ]
         }
 
-        with patch.object(scenarios, "ec2", mock_ec2):
+        with patch.object(scenarios, "_get_ec2", return_value=mock_ec2):
             result = scenarios.break_security_group("sg-test123")
 
         mock_ec2.revoke_security_group_ingress.assert_called_once_with(
@@ -59,7 +59,7 @@ class TestBreakSecurityGroup:
             ]
         }
 
-        with patch.object(scenarios, "ec2", mock_ec2):
+        with patch.object(scenarios, "_get_ec2", return_value=mock_ec2):
             result = scenarios.break_security_group("sg-test123")
 
         mock_ec2.revoke_security_group_ingress.assert_not_called()

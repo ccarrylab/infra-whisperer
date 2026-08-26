@@ -8,8 +8,22 @@ part of the fix is reconciling that drift back into Terraform.
 
 import boto3
 
-ec2 = boto3.client("ec2")
-rds = boto3.client("rds")
+_ec2 = None
+_rds = None
+
+
+def _get_ec2():
+    global _ec2
+    if _ec2 is None:
+        _ec2 = boto3.client("ec2")
+    return _ec2
+
+
+def _get_rds():
+    global _rds
+    if _rds is None:
+        _rds = boto3.client("rds")
+    return _rds
 
 
 def break_security_group(sg_id: str) -> dict:
@@ -18,7 +32,7 @@ def break_security_group(sg_id: str) -> dict:
     Simulates a manual security group edit that drifted from Terraform —
     one of the most common real incident causes.
     """
-    rules = ec2.describe_security_group_rules(
+    rules = _get_ec2().describe_security_group_rules(
         Filters=[{"Name": "group-id", "Values": [sg_id]}]
     )["SecurityGroupRules"]
 
@@ -27,7 +41,7 @@ def break_security_group(sg_id: str) -> dict:
     if not ingress_rule_ids:
         return {"status": "no_ingress_rules_found"}
 
-    ec2.revoke_security_group_ingress(
+    _get_ec2().revoke_security_group_ingress(
         GroupId=sg_id, SecurityGroupRuleIds=ingress_rule_ids[:1]
     )
     return {"status": "ingress_rule_revoked", "sg_id": sg_id, "rule_ids": ingress_rule_ids[:1]}
