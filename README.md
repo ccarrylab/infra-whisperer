@@ -180,8 +180,14 @@ terraform destroy
 ## Cost control
 
 `modules/budget` creates an AWS Budget with a hard dollar cap and an SNS alarm at 80%/100%
-of that cap. Treat this as non-optional — set `budget_limit_usd` in `terraform.tfvars` before
+of that cap. Treat this as non-optional - set `budget_limit_usd` in `terraform.tfvars` before
 running `apply`, and always run `terraform destroy` after a demo session.
+
+**Actual result:** running the full ALB/ECS/RDS stack for several days, plus five separate
+live incidents (chaos injections and recoveries), cost **$0.00** - confirmed via
+`aws budgets describe-budget`. Free-tier-eligible instance sizing (`db.t4g.micro`, minimal
+Fargate CPU/memory) combined with the teardown discipline meant real testing never touched
+the $25 cap.
 
 ## What I'd do differently at scale
 
