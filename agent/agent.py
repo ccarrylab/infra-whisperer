@@ -128,7 +128,12 @@ def watch(client: anthropic.Anthropic, poll_seconds: int = 30) -> None:
             if alarm["state"] == "ALARM" and alarm["name"] not in seen_in_alarm:
                 seen_in_alarm.add(alarm["name"])
                 print(f"\n[!] Incident detected: {alarm['name']}")
-                diagnose_now(client)
+                try:
+                    diagnose_now(client)
+                except Exception as exc:
+                    print(f"\n[error] Diagnosis failed for {alarm['name']}: {exc}")
+                    print("[!] Will retry on next poll if alarm is still active.")
+                    seen_in_alarm.discard(alarm["name"])
             elif alarm["state"] != "ALARM" and alarm["name"] in seen_in_alarm:
                 seen_in_alarm.discard(alarm["name"])
                 print(f"\n[ok] Recovered: {alarm['name']}")

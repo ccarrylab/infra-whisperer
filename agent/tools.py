@@ -231,7 +231,22 @@ def open_github_pr(branch_name: str, title: str, body: str, file_path: str, new_
 
     source_branch = repo.default_branch
     source = repo.get_branch(source_branch)
-    repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=source.commit.sha)
+
+    from github.GithubException import GithubException
+
+    final_branch_name = branch_name
+    suffix = 2
+    while True:
+        try:
+            repo.create_git_ref(ref=f"refs/heads/{final_branch_name}", sha=source.commit.sha)
+            break
+        except GithubException as exc:
+            if exc.status == 422 and suffix < 10:
+                final_branch_name = f"{branch_name}-v{suffix}"
+                suffix += 1
+            else:
+                raise
+    branch_name = final_branch_name
 
     contents = repo.get_contents(file_path, ref=source_branch)
     repo.update_file(
