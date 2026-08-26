@@ -240,6 +240,38 @@ the $25 cap.
   is not the same as an agent that is right, and a PR still has to be checked against real
   evidence before it is merged, not just trusted because the write-up reads well.
 
+## Watch mode, tested live for the first time
+
+Everything above was validated using `--diagnose-now` (run once, on demand). The
+`--watch` mode - continuous polling that should detect and diagnose incidents on its own
+- had never actually been run against real infrastructure. Testing it surfaced two more
+real bugs.
+
+**Bug 1: a single failed API call crashed the entire watcher.** Mid-test, an Anthropic
+billing issue caused one diagnosis attempt to fail - and that took down the whole
+long-running process, not just that one attempt. For something meant to run
+continuously, that's a real robustness gap. Fixed: the watch loop now catches exceptions
+per-incident, logs them, and retries on the next poll cycle instead of dying.
+
+**Bug 2: the agent skipped a real, active incident because it wrongly believed a fix
+already existed.** When it tried to open a PR, `create_git_ref` failed because the
+branch name was reused from an old, already-closed PR (this project has hit the same
+security-group incident several times during testing, so branch names collided). The
+agent interpreted that failure as "a PR must already be open" and declined to act - but
+`gh pr list --state open` showed zero open PRs. It had no tool to actually check real PR
+state, so it inferred from an unrelated tool error instead. The infrastructure sat broken
+while the agent incorrectly reported the issue as already handled. Fixed at the root: the
+`open_github_pr` tool now generates a fresh branch name automatically on any naming
+collision, so this class of failure can't happen regardless of what the agent infers.
+
+**The good news buried in this test:** watch mode's actual detection logic worked
+correctly the entire time - it noticed a real incident with zero manual triggering,
+correctly recognized (once, before the bug above) that a fix already existed on another
+occasion and declined to duplicate it, called the confidence-scoring tool honestly, and
+kept polling and caught a second, unrelated incident afterward. The two bugs found here
+are about resilience and PR-state tracking, not about the core detection or diagnosis
+logic, which held up under a mode of operation this project had never previously tested.
+
 ## Evidence-based confidence scoring
 
 An earlier version of this project (and an outside code review) both landed on the same
