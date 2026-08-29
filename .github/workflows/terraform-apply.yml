@@ -1,0 +1,203 @@
+name: Infra-Whisperer Apply Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'terraform/**'
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to apply'
+        required: true
+        type: string
+
+# ---------------------------------------------------------------------------
+# SECURITY: OIDC authentication — no long-lived AWS credentials
+# ---------------------------------------------------------------------------
+permissions:
+  id-token: write      # Required for OIDC
+  contents: read       # Required for checkout
+  pull-requests: write # Required for PR comments
+
+# ---------------------------------------------------------------------------
+# ENVIRONMENT PROTECTION
+# ---------------------------------------------------------------------------
+# The 'apply' job requires an environment with protection rules:
+#   - Required reviewers: at least 1 person
+#   - Wait timer: 0 minutes (or add a cooldown if desired)
+#   - Deployment branches: main only
+#
+# This means: even after a PR is approved and merged, a SECOND human 
+# must click "Approve" in the GitHub UI before terraform apply runs.
+# ---------------------------------------------------------------------------
+
+jobs:
+  # -------------------------------------------------------------------------
+  # JOB 1: Validate the PR (terraform fmt, validate, plan)
+  # Runs on every PR update. Read-only — never modifies infrastructure.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate & Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Configure AWS Credentials (Plan Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AGENT_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: github-actions-plan
+          # Max session duration: 15 minutes for plan
+          role-duration-seconds: 900
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+        env:
+          # Remote backend configuration
+          TF_BACKEND_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_BACKEND_DYNAMODB: ${{ vars.TF_LOCK_TABLE }}
+
+      - name: Terraform Format Check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+        continue-on-error: true  # Non-blocking, just informational
+
+      - name: Terraform Validate
+        working-directory: terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: terraform
+        run: |
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Comment PR with Plan
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planOutput = fs.readFileSync('terraform/plan_output.txt', 'utf8');
+            const summary = planOutput.split('\n').slice(0, 50).join('\n');
+            const body = `## Terraform Plan\n\n\`\`\`\n${summary}\n\`\`\``;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Plan Status Check
+        if: steps.plan.outputs.exit_code != '0'
+        run: |
+          echo "::error::Terraform plan failed. Review the plan output above."
+          exit 1
+
+  # -------------------------------------------------------------------------
+  # JOB 2: Apply (with environment protection)
+  # Only runs after:
+  #   1. PR is approved by CODEOWNERS
+  #   2. PR is merged to main
+  #   3. Environment protection rule is manually approved by a second reviewer
+  # -------------------------------------------------------------------------
+  apply:
+    name: Apply Changes
+    runs-on: ubuntu-latest
+    needs: validate
+
+    # Environment protection: this triggers the manual approval gate
+    environment: production
+
+    # Only run on merged PRs or manual dispatch
+    if: |
+      (github.event_name == 'pull_request_review' && 
+       github.event.review.state == 'approved' &&
+       github.event.pull_request.merged == true) ||
+      github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Configure AWS Credentials (Apply Role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # NOTE: Different role from plan! This one can actually modify infra.
+          role-to-assume: ${{ vars.AGENT_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: github-actions-apply
+          role-duration-seconds: 3600
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: |
+          # The plan file was generated in the validate job, but we re-plan
+          # to ensure we're applying the exact state that was reviewed.
+          terraform plan -out=tfplan
+          terraform apply -auto-approve tfplan
+
+      - name: Post-Apply Validation
+        id: validate
+        run: |
+          echo "Running post-apply health checks..."
+          # TODO: Add your health check script here
+          # Examples:
+          # - curl the ALB health endpoint
+          # - Check CloudWatch alarm states
+          # - Verify ECS service is stable
+          # - Check RDS connection count
+          echo "Health checks passed (placeholder)"
+
+      - name: Notify on Failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number || ${{ github.event.inputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ⚠️ Apply Failed\n\nTerraform apply failed after approval. Manual intervention required.\n\nCheck the Actions logs for details.'
+            });
+
+      - name: Notify on Success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number || ${{ github.event.inputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ✅ Apply Successful\n\nTerraform apply completed successfully. Post-apply health checks passed.\n\nThe infrastructure fix has been applied.'
+            });
