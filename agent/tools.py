@@ -7,14 +7,21 @@ compose them, not for any one tool to do too much.
 """
 
 import json
+import os
 import subprocess
 from datetime import datetime, timedelta, timezone
 
 import boto3
-from confidence_scoring import score_evidence
+
+# NEW: Import the enhanced confidence rubric and Terraform state parser
+from confidence_validator import ConfidenceRubric, EvidenceFlag
+from tf_state_parser import TerraformStateParser
 
 _cloudwatch = None
 _logs_client = None
+
+# Singleton rubric instance — deterministic, validated against historical incidents
+_rubric = ConfidenceRubric()
 
 
 def _get_cloudwatch():
@@ -133,16 +140,15 @@ def query_ecs_service_events(cluster_name: str, service_name: str, max_events: i
 
 
 # ---------------------------------------------------------------------------
-# Tool: read_terraform_state
+# Tool: read_terraform_state (legacy raw JSON — kept for general queries)
 # ---------------------------------------------------------------------------
 
 def read_terraform_state(terraform_dir: str = "../terraform") -> dict:
-    """Return the current Terraform state as JSON.
+    """Return the current Terraform state as raw JSON.
 
     The agent cross-references this against the CloudWatch/log evidence to
-    find root cause - e.g. "the security group ingress rule for port 5432
-    was removed" is visible here even if the symptom (connection timeouts)
-    only shows up in the app logs.
+    find root cause. For security-group-specific analysis, prefer
+    analyze_security_group which understands inline vs external rules.
     """
     result = subprocess.run(
         ["terraform", "show", "-json"],
@@ -152,6 +158,88 @@ def read_terraform_state(terraform_dir: str = "../terraform") -> dict:
         check=True,
     )
     return json.loads(result.stdout)
+
+
+# ---------------------------------------------------------------------------
+# NEW Tool: analyze_security_group (semantic parser)
+# ---------------------------------------------------------------------------
+
+def analyze_security_group(
+    sg_address: str,
+    terraform_dir: str = "../terraform",
+    expected_rules: list = None,
+) -> dict:
+    """Analyze a security group using the semantic Terraform state parser.
+
+    This is the enhanced replacement for raw state reading when investigating
+    security-group-related incidents. It understands:
+    - Inline rules (defined inside aws_security_group resource)
+    - External rules (defined as separate aws_security_group_rule resources)
+    - Effective rules (union of both, deduplicated by capability)
+
+    Use this when the diagnosis involves ALB connectivity, port access,
+    or security group changes. It prevents the blind spot where a rule
+    refactored from inline to external appears "missing" in raw state.
+    """
+    try:
+        state_result = subprocess.run(
+            ["terraform", "show", "-json"],
+            cwd=terraform_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        parser = TerraformStateParser.from_json(state_result.stdout)
+    except Exception as exc:
+        return {"error": f"Failed to parse Terraform state: {exc}"}
+
+    analysis = parser.analyze_security_group(sg_address)
+    if analysis is None:
+        return {"error": f"Security group {sg_address} not found in state"}
+
+    # Build the report
+    report_lines = [
+        f"Security Group: {analysis.sg_address}",
+        f"ID: {analysis.sg_id}",
+        f"Effective ingress rules: {len(analysis.effective_ingress_rules)} (inline: {len(analysis.inline_ingress_rules)}, external: {len(analysis.external_ingress_rules)})",
+        f"Effective egress rules: {len(analysis.effective_egress_rules)} (inline: {len(analysis.inline_egress_rules)}, external: {len(analysis.external_egress_rules)})",
+        "",
+        "Ingress rules:",
+    ]
+
+    for rule in analysis.effective_ingress_rules:
+        source = (
+            "inline"
+            if rule in analysis.inline_ingress_rules
+            else f"external: {rule.get('_source_address', 'unknown')}"
+        )
+        cidrs = ", ".join(rule.get("cidr_blocks", ["N/A"]))
+        report_lines.append(
+            f"  - {rule.get('protocol', 'tcp')}/{rule.get('from_port', 0)}-{rule.get('to_port', 0)} from {cidrs} [{source}]"
+        )
+
+    result = {
+        "sg_address": analysis.sg_address,
+        "sg_id": analysis.sg_id,
+        "effective_ingress_count": len(analysis.effective_ingress_rules),
+        "inline_ingress_count": len(analysis.inline_ingress_rules),
+        "external_ingress_count": len(analysis.external_ingress_rules),
+        "report": "\n".join(report_lines),
+    }
+
+    # Check for drift against expected rules
+    if expected_rules:
+        drift = parser.find_drift(expected_rules)
+        result["drift_detected"] = len(drift) > 0
+        result["drift_details"] = drift
+        if drift:
+            result["report"] += "\n\nGENUINE DRIFT DETECTED:\n"
+            for d in drift:
+                result["report"] += f"  - {d['type']}: {d.get('note', '')}\n"
+        else:
+            result["report"] += "\n\nNo genuine drift detected. All expected capabilities are present.\n"
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +263,7 @@ def propose_tf_diff(file_path: str, explanation: str, diff: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool: score_diagnosis_confidence
+# Tool: score_diagnosis_confidence (ENHANCED — uses confidence_validator)
 # ---------------------------------------------------------------------------
 
 def score_diagnosis_confidence(
@@ -187,25 +275,54 @@ def score_diagnosis_confidence(
     temporal_only: bool = False,
     contradicting_evidence: bool = False,
     no_supporting_evidence: bool = False,
+    recent_deployment_matches: bool = False,
 ) -> dict:
-    """Compute an evidence-based confidence score. This replaces free-form
-    confidence percentages with a deterministic score computed from which
-    evidence sources actually agree. Call this BEFORE stating a confidence
-    level in your final diagnosis, and report the returned percentage and
-    breakdown exactly as given - do not substitute your own estimate.
+    """Compute an evidence-based confidence score using a validated rubric.
+
+    This replaces free-form confidence percentages with a deterministic,
+    auditable score computed from which evidence sources actually support a
+    hypothesis. The rubric has been validated against the project's real
+    incident history (see confidence_validator.py).
+
+    Call this BEFORE stating a confidence level in your final diagnosis,
+    and report the returned score, verdict, and reasoning exactly as given -
+    do not substitute your own estimate. Set each flag to true ONLY if you
+    have actually observed that evidence in your investigation.
     """
-    return score_evidence(
-        {
-            "alarm_correlates": alarm_correlates,
-            "terraform_confirms": terraform_confirms,
-            "logs_confirm": logs_confirm,
-            "ecs_events_correlate": ecs_events_correlate,
-            "independent_second_signal": independent_second_signal,
-            "temporal_only": temporal_only,
-            "contradicting_evidence": contradicting_evidence,
-            "no_supporting_evidence": no_supporting_evidence,
-        }
-    )
+    flags = []
+    if alarm_correlates:
+        flags.append(EvidenceFlag.CLOUDWATCH_ALARM_CORRELATES)
+    if terraform_confirms:
+        flags.append(EvidenceFlag.TERRAFORM_STATE_CONFIRMS)
+    if logs_confirm:
+        flags.append(EvidenceFlag.LOGS_CONFIRM)
+    if ecs_events_correlate:
+        flags.append(EvidenceFlag.ECS_EVENTS_CORRELATE)
+    if independent_second_signal:
+        flags.append(EvidenceFlag.INDEPENDENT_SECOND_SIGNAL)
+    if temporal_only:
+        flags.append(EvidenceFlag.TEMPORAL_COINCIDENCE_ONLY)
+    if contradicting_evidence:
+        flags.append(EvidenceFlag.CONTRADICTING_EVIDENCE)
+    if recent_deployment_matches:
+        flags.append(EvidenceFlag.RECENT_DEPLOYMENT_MATCHES)
+    # no_supporting_evidence maps to having zero positive flags
+
+    result = _rubric.score(flags)
+
+    return {
+        "confidence_percent": result.score,
+        "verdict": result.verdict,
+        "requires_human_verification": result.requires_human_verification,
+        "reasoning": result.reasoning,
+        "evidence_breakdown": result.evidence_breakdown,
+        "max_possible": result.max_possible,
+        "note": (
+            "Rubric-based score validated against project incident history. "
+            "Same evidence pattern always produces same score. "
+            "See confidence_validator.py for calibration details."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +336,8 @@ def open_github_pr(branch_name: str, title: str, body: str, file_path: str, new_
     and "act" phases are auditable independently - useful both for safety
     and for narrating the flow in an interview demo.
     """
-    import os
-
     from github import Github
+    from github.GithubException import GithubException
 
     token = os.environ["GITHUB_TOKEN"]
     repo_name = os.environ["GITHUB_REPO"]  # e.g. "ccarrylab/infra-whisperer"
@@ -231,8 +347,6 @@ def open_github_pr(branch_name: str, title: str, body: str, file_path: str, new_
 
     source_branch = repo.default_branch
     source = repo.get_branch(source_branch)
-
-    from github.GithubException import GithubException
 
     final_branch_name = branch_name
     suffix = 2
@@ -306,10 +420,27 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "read_terraform_state",
-        "description": "Return the current Terraform state as JSON, to cross-reference against observed symptoms and find root cause (e.g. a mutated security group rule).",
+        "description": "Return the current Terraform state as raw JSON. Use for general infrastructure queries. For security-group-specific analysis, prefer analyze_security_group which understands inline vs external rules and prevents false drift reports.",
         "input_schema": {
             "type": "object",
             "properties": {"terraform_dir": {"type": "string", "default": "../terraform"}},
+        },
+    },
+    {
+        "name": "analyze_security_group",
+        "description": "Analyze a security group using the semantic Terraform state parser. This understands inline rules, external aws_security_group_rule resources, and computes effective rules (union of both). Use this INSTEAD of read_terraform_state when investigating ALB connectivity, port access, or security-group-related incidents. It prevents the blind spot where a rule refactored from inline to external appears missing in raw state. Optionally pass expected_rules to check for genuine drift.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sg_address": {"type": "string", "description": "Terraform address of the security group, e.g. aws_security_group.ecs_service"},
+                "terraform_dir": {"type": "string", "default": "../terraform"},
+                "expected_rules": {
+                    "type": "array",
+                    "description": "Optional list of expected rules to check for drift. Each item: {protocol, from_port, to_port, cidr_blocks, security_group_address}",
+                    "items": {"type": "object"},
+                },
+            },
+            "required": ["sg_address"],
         },
     },
     {
@@ -327,7 +458,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "score_diagnosis_confidence",
-        "description": "Compute an evidence-based confidence score for a hypothesis. ALWAYS call this before stating a confidence percentage in your final diagnosis - do not invent your own percentage. Set each flag to true only if you have actually observed that evidence in your investigation. Report the returned confidence_percent, supporting_signals, contradicting_signals, and independent_evidence_sources exactly as returned.",
+        "description": "Compute an evidence-based confidence score for a hypothesis using a validated rubric. ALWAYS call this before stating a confidence percentage in your final diagnosis - do not invent your own percentage. Set each flag to true ONLY if you have actually observed that evidence in your investigation. Report the returned confidence_percent, verdict, and reasoning exactly as returned. If the verdict is REJECT or LOW, do not open a PR - investigate further first.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -339,6 +470,7 @@ TOOL_DEFINITIONS = [
                 "temporal_only": {"type": "boolean", "description": "The only evidence is that two events happened close together in time, with no other corroboration - set this honestly even if it feels like it weakens your case"},
                 "contradicting_evidence": {"type": "boolean", "description": "Something you observed actively contradicts this hypothesis"},
                 "no_supporting_evidence": {"type": "boolean", "description": "You are stating this hypothesis without having found supporting evidence for it specifically"},
+                "recent_deployment_matches": {"type": "boolean", "description": "A recent deployment's timing or changes align with this hypothesis"},
             },
         },
     },
@@ -364,6 +496,7 @@ TOOL_IMPLEMENTATIONS = {
     "query_log_group": query_log_group,
     "query_ecs_service_events": query_ecs_service_events,
     "read_terraform_state": read_terraform_state,
+    "analyze_security_group": analyze_security_group,
     "propose_tf_diff": propose_tf_diff,
     "score_diagnosis_confidence": score_diagnosis_confidence,
     "open_github_pr": open_github_pr,

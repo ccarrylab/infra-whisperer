@@ -11,8 +11,10 @@ The agent:
      invisible to alarms/logs
   3. Pulls corroborating logs (query_log_group)
   4. Reads Terraform state to cross-reference infra config (read_terraform_state)
-  5. Scores confidence per hypothesis using an evidence-based rubric
-     (score_diagnosis_confidence) instead of a free-form LLM guess
+     OR uses the semantic security group analyzer (analyze_security_group) for
+     ALB/connectivity/port-access incidents
+  5. Scores confidence per hypothesis using an evidence-based, validated rubric
+     (score_diagnosis_confidence) — deterministic, not a free-form LLM guess
   6. Writes a plain-English explanation of the top hypothesis
   7. Stages a Terraform diff for the top hypothesis (propose_tf_diff)
   8. Opens a PR for human review (open_github_pr) - nothing is ever applied
@@ -43,13 +45,32 @@ Terraform-managed AWS environment. When invoked, you must:
    incidents are visible - do not skip it just because alarms look clean.
 3. Pull relevant logs to corroborate the symptom.
 4. Read Terraform state to find infrastructure-level root causes.
+
+   IMPORTANT: For security-group-related incidents (ALB connectivity issues,
+   port access problems), use analyze_security_group INSTEAD of the raw
+   read_terraform_state. The semantic parser understands that a rule may be
+   defined inline OR as a separate aws_security_group_rule resource, and it
+   computes "effective rules" (the union of both). This prevents the blind
+   spot where a refactored rule appears missing in raw state but is actually
+   present in a separate resource. Always use analyze_security_group when
+   investigating anything involving security groups, ingress/egress rules,
+   or ALB target health.
+
 5. For EACH hypothesis, call score_diagnosis_confidence with honest evidence
    flags based only on what you actually observed - do not set a flag to
    true just to make the score higher. Report the tool's returned
-   confidence_percent, supporting_signals, contradicting_signals, and
-   independent_evidence_sources exactly as given. Do NOT state a confidence
-   percentage that did not come from this tool. Rank hypotheses by the
-   scored confidence, not by how the write-up feels.
+   confidence_percent, verdict, and reasoning exactly as given. Do NOT state
+   a confidence percentage that did not come from this tool. Rank hypotheses
+   by the scored confidence, not by how the write-up feels.
+
+   If the verdict is REJECT or LOW, do not open a PR. Investigate further
+   or report that you cannot confidently diagnose the incident.
+
+   If the verdict is MODERATE, you may open a PR but must explicitly flag
+   that human verification (e.g. running terraform plan) is required before
+   merge.
+
+   If the verdict is HIGH, you may open a PR with normal confidence.
 6. Write a plain-English explanation of the most likely root cause, suitable
    for a non-technical stakeholder (a VP, not an engineer).
 7. Propose a minimal, safe Terraform diff that fixes the top hypothesis.
