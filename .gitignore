@@ -9,3 +9,19 @@ __pycache__/
 .env
 tfplan
 *.tfplan
+# SECURITY: Never commit these to a public repo
+*.tfstate
+*.tfstate.* 
+.terraform/
+terraform.tfstate.backup
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.aws/
+aws-credentials*
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+id_rsa*
