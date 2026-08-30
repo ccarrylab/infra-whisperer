@@ -46,7 +46,3 @@ variable "vpc_id" {
   default     = "*"
 }
 
-variable "state_bucket_name" {
-  description = "Base name for the S3 state bucket. A random suffix is appended. Set via TF_VAR_state_bucket_name env var — do NOT commit the actual name to this public repo."
-  type        = string
-}

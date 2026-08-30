@@ -96,9 +96,8 @@ module "budget" {
 module "safety" {
   source = "./modules/safety"
 
-  project_name    = var.project_name
-  environment     = var.environment
-  state_bucket_name = var.state_bucket_name
+  project_name = var.project_name
+  environment  = var.environment
 
   # The principal that runs the agent (your IAM user/role ARN, or ECS task role)
   # Set via TF_VAR_agent_trusted_principal_arn env var — never commit the value

@@ -104,10 +104,6 @@ variable "alarm_sns_email" {
   type        = string
 }
 
-variable "state_bucket_name" {
-  description = "Base name for S3 state bucket. Random suffix appended. Set via TF_VAR_state_bucket_name — never commit actual value."
-  type        = string
-}
 
 variable "environment" {
   description = "Environment name (dev, staging, prod)"

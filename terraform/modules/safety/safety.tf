@@ -25,7 +25,7 @@ resource "aws_s3_bucket" "terraform_state" {
   # SECURITY: Bucket name is parameterized. Set via:
   #   export TF_VAR_state_bucket_name="my-unique-bucket-name"
   # Never commit the actual bucket name to this public repo.
-  bucket = "${var.state_bucket_name}-${random_id.bucket_suffix.hex}"
+  bucket = "${var.project_name}-terraform-state-${var.environment}-${random_id.bucket_suffix.hex}"
 
   lifecycle {
     prevent_destroy = true
