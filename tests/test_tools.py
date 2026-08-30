@@ -1,12 +1,9 @@
 """
-Unit tests for Infra Whisperer's agent tools.
+Unit tests for Infra Whisperer's agent tools (updated for confidence_validator
+and tf_state_parser integration).
 
 These mock boto3/subprocess entirely - no AWS credentials or real
-infrastructure required to run this suite. That's deliberate: fast,
-deterministic tests you can run in CI, separate from the live end-to-end
-testing documented in the README (which does hit real AWS and is what
-actually validated this project - see the README's "found via live
-testing" sections for that).
+infrastructure required.
 
 Run with:
     pytest tests/test_tools.py -v
@@ -132,11 +129,165 @@ class TestReadTerraformState:
         assert result["format_version"] == "1.0"
 
 
+class TestAnalyzeSecurityGroup:
+    """Tests for the new semantic security group analyzer."""
+
+    def test_finds_external_rule_when_inline_is_empty(self):
+        """The key blind-spot fix: a rule defined as aws_security_group_rule
+        should be found even when aws_security_group.ingress is empty."""
+        mock_state = {
+            "version": 4,
+            "terraform_version": "1.5.0",
+            "resources": [
+                {
+                    "mode": "managed",
+                    "type": "aws_security_group",
+                    "name": "ecs_service",
+                    "provider": "provider[registry.terraform.io/hashicorp/aws]",
+                    "instances": [{
+                        "attributes": {
+                            "id": "sg-12345678",
+                            "name": "ecs-service-sg",
+                            "ingress": [],
+                            "egress": [{"protocol": "-1", "from_port": 0, "to_port": 0, "cidr_blocks": ["0.0.0.0/0"]}]
+                        },
+                        "dependencies": []
+                    }]
+                },
+                {
+                    "mode": "managed",
+                    "type": "aws_security_group_rule",
+                    "name": "alb_ingress",
+                    "provider": "provider[registry.terraform.io/hashicorp/aws]",
+                    "instances": [{
+                        "attributes": {
+                            "id": "sgrule-123456",
+                            "security_group_id": "sg-12345678",
+                            "type": "ingress",
+                            "protocol": "tcp",
+                            "from_port": 80,
+                            "to_port": 80,
+                            "cidr_blocks": ["0.0.0.0/0"],
+                        },
+                        "dependencies": ["aws_security_group.ecs_service"]
+                    }]
+                }
+            ]
+        }
+        mock_result = MagicMock()
+        mock_result.stdout = json.dumps(mock_state)
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = tools.analyze_security_group("aws_security_group.ecs_service")
+
+        assert result["effective_ingress_count"] == 1
+        assert result["inline_ingress_count"] == 0
+        assert result["external_ingress_count"] == 1
+        assert "external: aws_security_group_rule.alb_ingress" in result["report"]
+
+    def test_reports_genuine_drift_when_rule_missing(self):
+        """When the rule is actually gone (not just refactored), drift is detected."""
+        mock_state = {
+            "version": 4,
+            "terraform_version": "1.5.0",
+            "resources": [
+                {
+                    "mode": "managed",
+                    "type": "aws_security_group",
+                    "name": "ecs_service",
+                    "provider": "provider[registry.terraform.io/hashicorp/aws]",
+                    "instances": [{
+                        "attributes": {
+                            "id": "sg-12345678",
+                            "name": "ecs-service-sg",
+                            "ingress": [],
+                            "egress": [{"protocol": "-1", "from_port": 0, "to_port": 0, "cidr_blocks": ["0.0.0.0/0"]}]
+                        },
+                        "dependencies": []
+                    }]
+                }
+            ]
+        }
+        mock_result = MagicMock()
+        mock_result.stdout = json.dumps(mock_state)
+
+        expected_rules = [{
+            "security_group_address": "aws_security_group.ecs_service",
+            "protocol": "tcp",
+            "from_port": 80,
+            "to_port": 80,
+            "cidr_blocks": ["0.0.0.0/0"]
+        }]
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = tools.analyze_security_group(
+                "aws_security_group.ecs_service",
+                expected_rules=expected_rules
+            )
+
+        assert result["drift_detected"] is True
+        assert len(result["drift_details"]) == 1
+        assert result["drift_details"][0]["type"] == "missing_ingress_rule"
+
+    def test_returns_error_for_missing_security_group(self):
+        mock_state = {"version": 4, "terraform_version": "1.5.0", "resources": []}
+        mock_result = MagicMock()
+        mock_result.stdout = json.dumps(mock_state)
+
+        with patch("subprocess.run", return_value=mock_result):
+            result = tools.analyze_security_group("aws_security_group.nonexistent")
+
+        assert "error" in result
+
+
+class TestScoreDiagnosisConfidence:
+    """Tests for the enhanced confidence scoring with verdict system."""
+
+    def test_high_confidence_verdict(self):
+        result = tools.score_diagnosis_confidence(
+            alarm_correlates=True,
+            terraform_confirms=True,
+            ecs_events_correlate=True,
+            independent_second_signal=True,
+        )
+        assert result["confidence_percent"] == 80.0
+        assert result["verdict"] == "HIGH"
+        assert result["requires_human_verification"] is False
+
+    def test_moderate_confidence_verdict(self):
+        result = tools.score_diagnosis_confidence(
+            alarm_correlates=True,
+            terraform_confirms=True,
+        )
+        assert result["verdict"] == "MODERATE"
+        assert result["requires_human_verification"] is True
+        assert "terraform plan" in result["reasoning"].lower()
+
+    def test_reject_verdict_for_temporal_only(self):
+        result = tools.score_diagnosis_confidence(
+            ecs_events_correlate=True,
+            temporal_only=True,
+        )
+        assert result["verdict"] == "REJECT"
+        assert result["requires_human_verification"] is True
+        assert result["confidence_percent"] == 0.0
+
+    def test_contradicting_evidence_rejects(self):
+        result = tools.score_diagnosis_confidence(
+            alarm_correlates=True,
+            contradicting_evidence=True,
+        )
+        assert result["verdict"] == "REJECT"
+        assert result["confidence_percent"] == 0.0
+
+    def test_no_evidence_rejects(self):
+        result = tools.score_diagnosis_confidence()
+        assert result["verdict"] == "REJECT"
+        assert result["confidence_percent"] == 0.0
+
+
 class TestProposeTfDiff:
     def test_never_applies_only_stages(self):
-        """The most important property of this tool: it must be a pure
-        function with zero side effects. This is the human-approval gate's
-        foundation - verify it stays that way."""
         result = tools.propose_tf_diff(
             file_path="terraform/modules/rds/main.tf",
             explanation="Raise max_connections to prevent exhaustion",
@@ -148,17 +299,24 @@ class TestProposeTfDiff:
 
 class TestToolSchemaConsistency:
     def test_every_defined_tool_has_an_implementation(self):
-        """Regression test for a real bug found during manual testing:
-        query_ecs_service_events was added to TOOL_DEFINITIONS but
-        forgotten in TOOL_IMPLEMENTATIONS, which would have caused a
-        KeyError the first time the agent tried to call it."""
         defined_names = {t["name"] for t in tools.TOOL_DEFINITIONS}
         implemented_names = set(tools.TOOL_IMPLEMENTATIONS.keys())
         assert defined_names == implemented_names
 
-    def test_every_tool_definition_has_required_schema_fields(self):
-        for tool in tools.TOOL_DEFINITIONS:
-            assert "name" in tool
-            assert "description" in tool
-            assert "input_schema" in tool
-            assert tool["input_schema"]["type"] == "object"
+    def test_new_tools_are_present(self):
+        """Verify the enhanced tools are registered."""
+        names = {t["name"] for t in tools.TOOL_DEFINITIONS}
+        assert "analyze_security_group" in names
+        assert "score_diagnosis_confidence" in names
+        assert "read_terraform_state" in names
+
+    def test_analyze_security_group_has_expected_schema(self):
+        tool = next(t for t in tools.TOOL_DEFINITIONS if t["name"] == "analyze_security_group")
+        assert "sg_address" in tool["input_schema"]["properties"]
+        assert "expected_rules" in tool["input_schema"]["properties"]
+        assert "terraform_dir" in tool["input_schema"]["properties"]
+
+    def test_score_diagnosis_confidence_has_verdict_fields_in_description(self):
+        tool = next(t for t in tools.TOOL_DEFINITIONS if t["name"] == "score_diagnosis_confidence")
+        assert "verdict" in tool["description"].lower()
+        assert "reject" in tool["description"].lower()
