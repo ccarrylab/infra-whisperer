@@ -30,11 +30,11 @@ class TestConfidenceRubric:
         assert result.verdict == "REJECT"
         assert result.requires_human_verification is True
 
-    def test_single_signal_moderate(self):
+    def test_single_signal_rejects(self):
         rubric = ConfidenceRubric()
         result = rubric.score([EvidenceFlag.CLOUDWATCH_ALARM_CORRELATES])
         assert result.score == 20.0
-        assert result.verdict == "LOW"
+        assert result.verdict == "REJECT"
         assert result.requires_human_verification is True
 
     def test_multiple_independent_sources_high(self):

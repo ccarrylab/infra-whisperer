@@ -258,6 +258,7 @@ class TestScoreDiagnosisConfidence:
         result = tools.score_diagnosis_confidence(
             alarm_correlates=True,
             terraform_confirms=True,
+            logs_confirm=True,
         )
         assert result["verdict"] == "MODERATE"
         assert result["requires_human_verification"] is True
