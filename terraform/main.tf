@@ -81,3 +81,34 @@ module "budget" {
   budget_limit_usd   = var.budget_limit_usd
   budget_alert_email = var.budget_alert_email
 }
+
+# ---------------------------------------------------------------------------
+# Production Safety Infrastructure
+# ---------------------------------------------------------------------------
+# This module creates:
+#   - S3 bucket + DynamoDB table for remote Terraform state with locking
+#   - Three scoped IAM roles (diagnosis, plan, apply)
+#   - GitHub OIDC provider for credential-less Actions authentication
+#
+# IMPORTANT: Deploy this module first with local state, then uncomment
+# backend.tf and run `terraform init -migrate-state` to move state to S3.
+# ---------------------------------------------------------------------------
+module "safety" {
+  source = "./modules/safety"
+
+  project_name    = var.project_name
+  environment     = var.environment
+  state_bucket_name = var.state_bucket_name
+
+  # The principal that runs the agent (your IAM user/role ARN, or ECS task role)
+  # Set via TF_VAR_agent_trusted_principal_arn env var — never commit the value
+  trusted_principal_arn = var.agent_trusted_principal_arn
+
+  github_org  = var.github_org
+  github_repo = var.github_repo
+
+  # Scope permissions to actual resources
+  ecs_cluster_arn        = module.ecs.cluster_arn
+  rds_instance_arn       = module.rds.db_instance_arn
+  ecs_execution_role_arn = module.ecs.execution_role_arn
+}

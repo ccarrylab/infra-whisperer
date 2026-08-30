@@ -103,3 +103,31 @@ variable "alarm_sns_email" {
   description = "Email to notify for CloudWatch alarms (feeds the agent's incident trigger)"
   type        = string
 }
+
+variable "state_bucket_name" {
+  description = "Base name for S3 state bucket. Random suffix appended. Set via TF_VAR_state_bucket_name — never commit actual value."
+  type        = string
+}
+
+variable "environment" {
+  description = "Environment name (dev, staging, prod)"
+  type        = string
+  default     = "prod"
+}
+
+variable "agent_trusted_principal_arn" {
+  description = "ARN of the IAM principal that runs the agent. Set via TF_VAR_agent_trusted_principal_arn env var — never commit."
+  type        = string
+}
+
+variable "github_org" {
+  description = "GitHub organization name for OIDC provider"
+  type        = string
+  default     = "ccarrylab"
+}
+
+variable "github_repo" {
+  description = "GitHub repository name for OIDC provider"
+  type        = string
+  default     = "infra-whisperer"
+}
