@@ -1,27 +1,33 @@
+# Terraform state files (contain infrastructure secrets)
 *.tfstate
-*.tfstate.backup
-.terraform/
-.terraform.lock.hcl
-terraform.tfvars
-*.pem
-__pycache__/
-*.pyc
-.env
-tfplan
-*.tfplan
-# SECURITY: Never commit these to a public repo
-*.tfstate
-*.tfstate.* 
+*.tfstate.*
 .terraform/
 terraform.tfstate.backup
+.terraform.lock.hcl
+
+# Terraform variable files with sensitive values
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+
+# AWS credentials
 .aws/
 aws-credentials*
+
+# Environment files with secrets
 .env
 .env.local
 .env.*.local
+
+# SSH keys
 *.pem
 *.key
 id_rsa*
+
+# Python
+__pycache__/
+*.pyc
+
+# Terraform plan files
+tfplan
+*.tfplan
