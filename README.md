@@ -24,7 +24,7 @@ live, not staged. Idle time compressed for watchability; nothing else edited.
 
 I didn't just build this and call it done - I ran three separate live incidents against
 real AWS infrastructure and pushed past the first clean result each time. That surfaced
-three findings, each more interesting than the last:
+five findings, each more interesting than the last:
 
 - **A monitoring gap:** `UnHealthyHostCount` never fires on a fully-drained target group -
   it goes to `INSUFFICIENT_DATA`, not `ALARM`. Found by scaling to zero and watching it not
@@ -239,8 +239,9 @@ terraform destroy
 of that cap. Treat this as non-optional - set `budget_limit_usd` in `terraform.tfvars` before
 running `apply`, and always run `terraform destroy` after a demo session.
 
-**Actual result:** running the full ALB/ECS/RDS stack for several days, plus five separate
-live incidents (chaos injections and recoveries), cost **$0.00** - confirmed via
+**Actual result:** running the full ALB/ECS/RDS stack for several days, plus extensive live incident
+testing (chaos injections and recoveries, including later work adding the safety module
+and Terraform-based chaos injection), cost **$0.00** - confirmed via
 `aws budgets describe-budget`. Free-tier-eligible instance sizing (`db.t4g.micro`, minimal
 Fargate CPU/memory) combined with the teardown discipline meant real testing never touched
 the $25 cap.
