@@ -1,5 +1,5 @@
 output "db_instance_id" {
-  value = aws_db_instance.this.id
+  value = aws_db_instance.this.identifier
 }
 
 output "db_instance_arn" {

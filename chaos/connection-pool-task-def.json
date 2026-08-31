@@ -1,0 +1,28 @@
+{
+  "family": "infra-whisperer-connection-exhaust-test",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::089719647189:role/infra-whisperer-ecs-execution-role",
+  "containerDefinitions": [
+    {
+      "name": "connection-exhaust-test",
+      "image": "python:3.12-slim",
+      "essential": true,
+      "command": [
+        "sh",
+        "-c",
+        "echo aW1wb3J0IG9zCmltcG9ydCB0aW1lCmltcG9ydCBwc3ljb3BnMgoKY29ubnMgPSBbXQp0YXJnZXQgPSAxOApmb3IgaSBpbiByYW5nZSh0YXJnZXQpOgogICAgdHJ5OgogICAgICAgIGMgPSBwc3ljb3BnMi5jb25uZWN0KAogICAgICAgICAgICBob3N0PW9zLmVudmlyb25bIkRCX0hPU1QiXSwKICAgICAgICAgICAgcG9ydD1vcy5lbnZpcm9uWyJEQl9QT1JUIl0sCiAgICAgICAgICAgIGRibmFtZT1vcy5lbnZpcm9uWyJEQl9OQU1FIl0sCiAgICAgICAgICAgIHVzZXI9b3MuZW52aXJvblsiREJfVVNFUiJdLAogICAgICAgICAgICBwYXNzd29yZD1vcy5lbnZpcm9uWyJEQl9QQVNTV09SRCJdLAogICAgICAgICAgICBjb25uZWN0X3RpbWVvdXQ9NSwKICAgICAgICApCiAgICAgICAgY29ubnMuYXBwZW5kKGMpCiAgICAgICAgcHJpbnQoZiJvcGVuZWQge2kgKyAxfSIpCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGV4YzoKICAgICAgICBwcmludChmImZhaWxlZCBhdCBhdHRlbXB0IHtpICsgMX06IHtleGN9IikKICAgICAgICBicmVhawoKcHJpbnQoZiJGSU5BTDoge2xlbihjb25ucyl9IGNvbm5lY3Rpb25zIGhlbGQgb3BlbiIpCnByaW50KCJIb2xkaW5nIGZvciAyNDAgc2Vjb25kcyBzbyBDbG91ZFdhdGNoIGhhcyB0aW1lIHRvIHNhbXBsZSBhbmQgdGhlIGFsYXJtIGhhcyAyKyBmdWxsIGV2YWx1YXRpb24gcGVyaW9kcy4uLiIpCnRpbWUuc2xlZXAoMjQwKQoKZm9yIGMgaW4gY29ubnM6CiAgICB0cnk6CiAgICAgICAgYy5jbG9zZSgpCiAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgIHBhc3MKcHJpbnQoInJlbGVhc2VkIikK | base64 -d > /tmp/script.py && pip install --quiet psycopg2-binary && python3 /tmp/script.py"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/infra-whisperer",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "connection-test"
+        }
+      }
+    }
+  ]
+}
