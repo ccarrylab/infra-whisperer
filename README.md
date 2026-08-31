@@ -324,6 +324,30 @@ values, and created the `production` environment with a required reviewer and a
 branch-restricted deployment rule. Found by actually trying to run the pipeline rather than
 assuming that committed code and documentation meant it worked.
 
+**The deeper story: fixing the config didn't fully fix the pipeline.** After setting the
+Actions variables and creating the environment, the pipeline still failed - `Configure AWS
+Credentials` couldn't assume the plan role at all, and the trust policy looked textually
+correct. The real cause, found only by adding a temporary debug step to decode the actual
+OIDC token GitHub issues: the token's `sub` claim is
+`repo:OWNER@OWNER_ID/REPO@REPO_ID:context` (e.g.
+`repo:ccarrylab@23640564/infra-whisperer@1344278950:pull_request`), not the classic
+`repo:OWNER/REPO:context` format that's still what nearly every tutorial, blog post, and
+even this project's own Terraform code assumed. Both `agent_plan` and `agent_apply`'s trust
+policies had this exact bug - `agent_apply`'s policy looked more "complete" because it
+correctly referenced the OIDC provider, but it had never actually been tested and carried
+the identical wrong claim format. Fixed both with a wildcard on the numeric ID portion,
+which also makes the policy resilient to the repo being renamed or transferred. Confirmed
+fixed: `Configure AWS Credentials` went from failing in 8 seconds to succeeding outright.
+
+**What's still genuinely open:** the pipeline's `Terraform Plan` step then hung
+indefinitely. The real cause: there is no `backend.tf` - every local `terraform apply` this
+whole project ran used local state, and the S3 bucket and DynamoDB lock table the safety
+module provisions were never actually migrated to. CI has no persistent state at all, so
+every run starts from nothing and would attempt to plan-create the entire environment from
+scratch. This is a real, unresolved gap, left honestly unresolved rather than rushed - a
+live state migration deserves its own careful session, not something forced through at the
+end of a long one.
+
 ## What I'd do differently at scale
 
 - **Multi-region:** Everything assumes a single region. Multi-region incidents need

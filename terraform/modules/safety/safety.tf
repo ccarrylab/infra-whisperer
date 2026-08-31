@@ -244,10 +244,21 @@ resource "aws_iam_role" "agent_plan" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRole"
+        Action = "sts:AssumeRoleWithWebIdentity"
         Effect = "Allow"
         Principal = {
-          AWS = var.trusted_principal_arn
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = [
+              "repo:${var.github_org}@*/${var.github_repo}@*:pull_request",
+              "repo:${var.github_org}@*/${var.github_repo}@*:ref:refs/heads/main",
+            ]
+          }
         }
       }
     ]
@@ -352,8 +363,8 @@ resource "aws_iam_role" "agent_apply" {
           }
           StringLike = {
             "token.actions.githubusercontent.com:sub" = [
-              "repo:${var.github_org}/${var.github_repo}:environment:${var.environment}",
-              "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main",
+              "repo:${var.github_org}@*/${var.github_repo}@*:environment:${var.environment}",
+              "repo:${var.github_org}@*/${var.github_repo}@*:ref:refs/heads/main",
             ]
           }
         }

@@ -55,7 +55,7 @@ resource "aws_cloudwatch_metric_alarm" "db_connections_high" {
   period              = 60
   statistic           = "Average"
   threshold           = 15 # close to the 20 max_connections cap set in the rds module
-  alarm_description   = "Triggers when DB connections approach the configured max — feeds the 'connection_pool' chaos scenario"
+  alarm_description   = "Triggers when DB connections approach the configured max (real usable ceiling is lower due to RDS reserved connections - see README) - feeds the connection_pool chaos scenario"
   alarm_actions       = [aws_sns_topic.alarms.arn]
 
   dimensions = {
