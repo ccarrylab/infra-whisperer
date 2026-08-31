@@ -35,9 +35,11 @@ fastest path to a full end-to-end run.
 - The agent has no visibility into RDS-level metrics beyond what
   `query_cloudwatch` already covers - a `query_rds_performance_insights` tool
   would be a natural next addition.
-- Confidence ranking is currently pure LLM judgment, not backed by a scoring
-  rubric. See the README's "what I'd do differently at scale" section for the
-  fuller reasoning on this.
+- The safety module (`terraform/modules/safety`) provisions a scoped, diagnosis-only IAM
+  role, but the agent runtime does not actually assume it via STS yet - it currently uses
+  whatever default AWS credentials are present in its environment. The separation is real
+  at the Terraform/IAM level; it is not yet enforced at runtime. Wiring real
+  `sts:AssumeRole` calls into `agent/tools.py` is the concrete next step.
 
 ## Pull requests
 

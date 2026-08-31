@@ -149,6 +149,7 @@ chaos/
   inject.py             # on-demand failure injection (boto3-based)
   chaos_inject_tf.py    # state-consistent chaos injection (Terraform-based)
   scenarios.py          # 3 failure scenarios (SG rule, connection pool, IAM)
+  connection-pool-task-def.json  # reproducible VPC-internal connection exhaustion test
 .github/
   workflows/
     tests.yml           # CI test runner
@@ -209,7 +210,11 @@ export ANTHROPIC_API_KEY=...
 export GITHUB_TOKEN=...
 export GITHUB_REPO=ccarrylab/infra-whisperer
 export AWS_REGION=us-east-1
-# Agent assumes these roles instead of using broad credentials:
+# The safety module provisions these least-privilege roles (see terraform/modules/safety),
+# but the agent runtime does not yet assume them via STS - it currently uses whatever
+# default AWS credentials boto3 picks up from your environment. Wiring actual role
+# assumption into agent.py/tools.py is a real gap, not yet done - see "What I'd do
+# differently at scale" below.
 export AGENT_DIAGNOSIS_ROLE_ARN=...
 export AGENT_PLAN_ROLE_ARN=...
 ```
@@ -293,9 +298,13 @@ The `terraform/modules/safety/` module creates:
   - `apply` — GitHub Actions only via OIDC, time-bounded, scoped to specific resources
 - **GitHub OIDC provider** for credential-less Actions authentication
 
-**Principle:** The agent never holds credentials that can both diagnose AND modify
-infrastructure. The apply role is assumed only by GitHub Actions after two human approvals
-(CODEOWNERS + environment protection rule).
+**Principle:** The agent should never hold credentials that can both diagnose AND modify
+infrastructure. The Terraform-defined roles enforce this separation, and the apply role is
+assumed only by GitHub Actions after two human approvals (CODEOWNERS + environment
+protection rule) - that part is real and enforced today. What's not yet real: the agent
+runtime itself does not currently assume the scoped diagnosis role via STS - it uses
+whatever default AWS credentials are present in its environment. The roles exist; the
+agent doesn't use them yet. See "What I'd do differently at scale" below.
 
 ## What I'd do differently at scale
 
@@ -305,9 +314,12 @@ infrastructure. The apply role is assumed only by GitHub Actions after two human
   yet. The workflow notifies on failure but doesn't self-heal.
 - **Cost granularity:** The budget alarm is project-level. Production needs per-service
   cost alerts and anomaly detection.
-- **Agent identity:** Currently the agent assumes IAM roles. At scale, this should be an
-  ECS task with a task role, running in its own VPC with no outbound internet except to
-  AWS APIs and the Anthropic API.
+- **Agent identity:** The safety module provisions a scoped diagnosis-only IAM role, but
+  the agent runtime doesn't actually assume it yet via STS - it currently runs with
+  whatever default credentials are in its environment. Wiring real STS AssumeRole calls
+  into `agent/tools.py` is the honest next step here, not a someday-at-scale concern. At
+  scale beyond that, this should be an ECS task with a task role, running in its own VPC
+  with no outbound internet except to AWS APIs and the Anthropic API.
 - **The agent's causal reasoning:** The rubric catches confident wrong answers by scoring
   low on weak evidence, but the underlying LLM tendency to "weave real events into wrong
   stories" remains. More tooling = more raw material for wrong answers. The human-approval
