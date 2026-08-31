@@ -4,7 +4,7 @@
   "networkMode": "awsvpc",
   "cpu": "256",
   "memory": "512",
-  "executionRoleArn": "arn:aws:iam::089719647189:role/infra-whisperer-ecs-execution-role",
+  "executionRoleArn": "arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:role/infra-whisperer-ecs-execution-role",
   "containerDefinitions": [
     {
       "name": "connection-exhaust-test",
