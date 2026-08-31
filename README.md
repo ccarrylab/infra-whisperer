@@ -82,24 +82,23 @@ to a confidence-ranked root cause and an open PR in under a minute of API time.
 ## Architecture
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryBorderColor": "#616161", "primaryTextColor": "#212121", "lineColor": "#616161", "fontFamily": "Helvetica"}}}%%
 flowchart TD
-    subgraph Infra["🏗️ Real AWS infrastructure"]
-        ALB(["ALB"]) --> ECS(["ECS Fargate service"])
-        ECS --> RDS[("RDS Postgres")]
+    subgraph Infra["Real AWS infrastructure"]
+        ALB[ALB] --> ECS[ECS Fargate service]
+        ECS --> RDS[(RDS Postgres)]
     end
 
-    Chaos["🔥 chaos/inject.py<br/>injects real failures"] -.-> Infra
+    Chaos["chaos/inject.py<br/>injects real failures"] -.-> Infra
 
-    Infra --> CW["CloudWatch alarms"]
-    Infra --> EV["ECS service events"]
-    Infra --> LG["CloudWatch logs"]
-    Infra --> TF["Terraform state"]
+    Infra --> CW[CloudWatch alarms]
+    Infra --> EV[ECS service events]
+    Infra --> LG[CloudWatch logs]
+    Infra --> TF[Terraform state]
 
-    subgraph AgentBox["🤖 agent/agent.py — Claude tool-use loop"]
-        Parser["Semantic state parser"]
-        Diag["Confidence-ranked diagnosis"]
-        Rubric["Evidence-based rubric"]
+    subgraph AgentBox["agent/agent.py - Claude tool-use loop"]
+        Diag[Confidence-ranked diagnosis]
+        Rubric[Evidence-based rubric]
+        Parser[Semantic state parser]
     end
 
     CW --> Diag
@@ -108,47 +107,20 @@ flowchart TD
     TF --> Parser
     Parser --> Diag
     Diag --> Rubric
-    Rubric --> Verdict{{"Verdict"}}
+    Rubric --> Verdict{Verdict: HIGH/MODERATE/LOW/REJECT}
 
-    Verdict -->|HIGH / MODERATE| PR["📝 GitHub PR opened"]
-    Verdict -->|LOW / REJECT| Investigate["🔍 Investigate further"]
+    Verdict -->|HIGH/MODERATE| PR[GitHub PR opened]
+    Verdict -->|LOW/REJECT| Investigate[Investigate further]
+    PR --> Human{Human reviews}
+    Human -->|merge| GHA[GitHub Actions]
+    GHA -->|plan + approval + apply| Infra
+    Human -->|reject| NoOp[Nothing changes]
 
-    subgraph Gate["🛡️ Human-approval gate"]
-        CIValidate[["CI: terraform validate + tfsec"]]
-        Human{{"Human reads<br/>the full diff"}}
-    end
-
-    PR --> CIValidate
-    CIValidate --> Human
-    Human -->|merge| GHA(["GitHub Actions:<br/>plan → approval → apply"])
-    GHA --> Infra
-    Human -->|reject| NoOp["✅ Nothing changes"]
-
-    TF -.->|"zero-incident risk found:<br/>max_connections=20"| Diag
-    CW -.->|"real incident: SG rule revoked<br/>240s detection, HIGH confidence"| Diag
-    EV -.->|"blind spot: IAM policy removed,<br/>invisible to CloudWatch"| Diag
-    Parser -.->|"blind spot fixed:<br/>refactored rule read correctly"| Diag
-    CIValidate -.->|"caught a PR that would have<br/>deleted the live database"| Human
-
-    classDef infra fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
-    classDef agent fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#4a148c
-    classDef gate fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
-    classDef verdict fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100
-    classDef critical fill:#ffebee,stroke:#c62828,stroke-width:3px,color:#b71c1c
-    classDef neutral fill:#fafafa,stroke:#9e9e9e,stroke-width:2px,color:#424242
-
-    class ALB,ECS,RDS,CW,EV,LG,TF infra
-    class Parser,Diag,Rubric agent
-    class Human,GHA gate
-    class CIValidate critical
-    class Verdict verdict
-    class NoOp,Investigate neutral
+    TF -.->|"proactive finding: max_connections=20<br/>found with zero active incident"| Diag
+    CW -.->|"real incident: SG rule revoked<br/>detected in 240s, HIGH confidence, real PR opened"| Diag
+    EV -.->|"blind spot found here: IAM policy removed<br/>invisible to CloudWatch, only ECS events caught it"| Diag
+    Parser -.->|"blind spot fix: refactored SG rule<br/>correctly identified as present, not missing"| Diag
 ```
-
-The three dotted lines above map to real findings documented in this README - this diagram
-is the actual shape of what happened during testing, not a generic architecture sketch. The
-red-bordered CI validation step is where the connection-pool test's near-catastrophic PR
-was caught before it could ever reach a human's merge decision.
 
 ## Repo layout
 
