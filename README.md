@@ -96,9 +96,9 @@ flowchart TD
     Infra --> TF[Terraform state]
 
     subgraph AgentBox["agent/agent.py - Claude tool-use loop"]
+        Parser[Semantic state parser]
         Diag[Confidence-ranked diagnosis]
         Rubric[Evidence-based rubric]
-        Parser[Semantic state parser]
     end
 
     CW --> Diag
@@ -111,16 +111,17 @@ flowchart TD
 
     Verdict -->|HIGH/MODERATE| PR[GitHub PR opened]
     Verdict -->|LOW/REJECT| Investigate[Investigate further]
+
     PR --> Human{Human reviews}
     Human -->|merge| GHA[GitHub Actions]
     GHA -->|plan + approval + apply| Infra
     Human -->|reject| NoOp[Nothing changes]
-
-    TF -.->|"proactive finding: max_connections=20<br/>found with zero active incident"| Diag
-    CW -.->|"real incident: SG rule revoked<br/>detected in 240s, HIGH confidence, real PR opened"| Diag
-    EV -.->|"blind spot found here: IAM policy removed<br/>invisible to CloudWatch, only ECS events caught it"| Diag
-    Parser -.->|"blind spot fix: refactored SG rule<br/>correctly identified as present, not missing"| Diag
 ```
+
+This is the actual shape of the system, not a generic sketch - every arrow above corresponds
+to a real code path exercised during live testing. The specific incidents and findings
+(the SG rule revocation, the IAM blind spot, the near-catastrophic connection-pool PR) are
+documented in full detail in the sections below rather than crammed into the diagram itself.
 
 ## Repo layout
 
@@ -305,6 +306,23 @@ protection rule) - that part is real and enforced today. What's not yet real: th
 runtime itself does not currently assume the scoped diagnosis role via STS - it uses
 whatever default AWS credentials are present in its environment. The roles exist; the
 agent doesn't use them yet. See "What I'd do differently at scale" below.
+
+**A gap between "the code exists" and "the pipeline actually works":** the multi-step
+approval workflow (`terraform-apply.yml`) and the safety module were both fully written and
+committed - but the underlying GitHub repository configuration they depend on had never
+actually been completed. The required Actions variables (`AGENT_PLAN_ROLE_ARN`,
+`AGENT_APPLY_ROLE_ARN`, `AGENT_DIAGNOSIS_ROLE_ARN`, `TF_STATE_BUCKET`, `TF_LOCK_TABLE`,
+`AWS_REGION`) were unset, and the `production` GitHub environment referenced by the apply
+job (`environment: production`) didn't exist at all. In practice this meant the "plan" job
+failed immediately on missing credentials, and even if it hadn't, the "required reviewer"
+protection this whole safety story depends on was not actually enforced - GitHub only
+applies environment protection rules once an environment is genuinely configured. Root
+`outputs.tf` also didn't expose the safety module's role ARNs or state backend names, so
+there was no easy way to even discover the correct values to set. Fixed all three: added
+the missing root outputs, set all six repository variables to their real Terraform-output
+values, and created the `production` environment with a required reviewer and a
+branch-restricted deployment rule. Found by actually trying to run the pipeline rather than
+assuming that committed code and documentation meant it worked.
 
 ## What I'd do differently at scale
 

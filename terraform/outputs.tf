@@ -19,3 +19,24 @@ output "rds_endpoint" {
 output "vpc_id" {
   value = local.vpc_id
 }
+
+output "agent_diagnosis_role_arn" {
+  description = "Set as AGENT_DIAGNOSIS_ROLE_ARN"
+  value       = module.safety.agent_diagnosis_role_arn
+}
+output "agent_plan_role_arn" {
+  description = "Set as AGENT_PLAN_ROLE_ARN GitHub Actions variable"
+  value       = module.safety.agent_plan_role_arn
+}
+output "agent_apply_role_arn" {
+  description = "Set as AGENT_APPLY_ROLE_ARN GitHub Actions variable"
+  value       = module.safety.agent_apply_role_arn
+}
+output "tf_state_bucket" {
+  description = "Set as TF_STATE_BUCKET GitHub Actions variable"
+  value       = module.safety.s3_bucket_name
+}
+output "tf_lock_table" {
+  description = "Set as TF_LOCK_TABLE GitHub Actions variable"
+  value       = module.safety.dynamodb_table_name
+}
