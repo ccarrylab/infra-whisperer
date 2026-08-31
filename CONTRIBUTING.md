@@ -23,12 +23,15 @@ fastest path to a full end-to-end run.
 
 ## Known gaps if you want to extend this
 
-- The `connection_pool` chaos scenario was never run live during development
-  (it needs a temporary public RDS endpoint, a tradeoff I didn't take - see
-  the README's cost/security notes). `chaos/scenarios.py::exhaust_connection_pool`
-  is also not unit tested for the same reason it's hard to run live: it blocks
-  on an interactive loop waiting for a KeyboardInterrupt. A real fix would
-  refactor it to accept an injectable stop condition.
+- The `connection_pool` scenario was eventually tested live without ever exposing RDS
+  publicly, by running the exhaustion script from a one-off ECS task inside the same VPC
+  (see `chaos/connection-pool-task-def.json` and the README's writeup - it surfaced a
+  silently broken CloudWatch alarm, a real connection ceiling well below the configured
+  cap, and a near-catastrophic auto-generated PR that would have deleted the live
+  database if merged without reading the full diff). `chaos/scenarios.py::exhaust_connection_pool`
+  (the original boto3/psycopg2-based version) is still not unit tested, since it blocks on
+  an interactive loop waiting for a KeyboardInterrupt. A real fix would refactor it to
+  accept an injectable stop condition.
 - The agent has no visibility into RDS-level metrics beyond what
   `query_cloudwatch` already covers - a `query_rds_performance_insights` tool
   would be a natural next addition.

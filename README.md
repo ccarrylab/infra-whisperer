@@ -24,7 +24,7 @@ live, not staged. Idle time compressed for watchability; nothing else edited.
 
 I didn't just build this and call it done - I ran three separate live incidents against
 real AWS infrastructure and pushed past the first clean result each time. That surfaced
-five findings, each more interesting than the last:
+six findings, each more interesting than the last:
 
 - **A monitoring gap:** `UnHealthyHostCount` never fires on a fully-drained target group -
   it goes to `INSUFFICIENT_DATA`, not `ALARM`. Found by scaling to zero and watching it not
@@ -48,6 +48,9 @@ five findings, each more interesting than the last:
   the agent to propose a fix for a rule that was actually present. Fixed with a semantic
   state parser that understands inline vs external rules and computes "effective rules"
   (the union of both), distinguishing genuine drift from refactored resources.
+- **A silently broken alarm, a wrong claim, and a near-catastrophic PR:** finally live-testing
+  the long-skipped `connection_pool` scenario (via a VPC-internal one-off ECS task instead of
+  exposing RDS publicly) surfaced the richest chain of findings yet - full writeup below.
 
 **Rough numbers from the security-group incident:** manually correlating an ALB alarm,
 ECS events, and Terraform state to find a revoked security group rule is a 10-15 minute
@@ -309,6 +312,63 @@ infrastructure. The apply role is assumed only by GitHub Actions after two human
   low on weak evidence, but the underlying LLM tendency to "weave real events into wrong
   stories" remains. More tooling = more raw material for wrong answers. The human-approval
   gate is the safety net, not a temporary measure.
+
+## The connection_pool test: a broken alarm, a wrong claim, and a near-catastrophic PR
+
+The `connection_pool` chaos scenario was the one gap left in this project for a while - it
+needed a way to exhaust real database connections without exposing RDS publicly. The fix:
+run the exhaustion script from a one-off ECS Fargate task inside the same VPC, reusing the
+existing ECS service's security group - which the RDS security group already trusts. Zero
+public exposure, real exhaustion. See `chaos/connection-pool-task-def.json`.
+
+**Finding 1 - the alarm had been silently broken since the day it was created.** The first
+real test run showed `db_connections_high` stuck at `INSUFFICIENT_DATA`, reason "Unchecked:
+Initial alarm creation" - despite the project being days old with multiple real incidents
+already run. The cause: the alarm's dimension was wired to `aws_db_instance.this.id`, which
+returns RDS's internal resource ID (`db-WF4DMQC4YGBDGD4BNHRKJGKMGQ`), not the
+`DBInstanceIdentifier` name (`infra-whisperer-db`) that CloudWatch actually publishes
+`AWS/RDS` metrics under. This alarm had never received a single real data point, through
+every prior incident in this project's history, because nothing had ever live-tested this
+specific scenario. Fixed by switching to `.identifier`.
+
+**Finding 2 - the real, usable connection ceiling was far below the configured cap.**
+`max_connections` is set to 20, and the alarm threshold is 15. In practice, opening
+connections one at a time hit a hard wall at **11**, with Postgres returning `FATAL:
+remaining connection slots are reserved for roles with privileges of the "rds_reserved"
+role` - RDS reserves several slots internally regardless of what `max_connections` says.
+Confirmed via CloudWatch itself: three consecutive real datapoints at exactly `11.0`, alarm
+correctly staying `OK` the whole time (11 < 15). This means even a properly-functioning
+alarm, correctly wired, provides **zero advance warning** before real connection
+exhaustion, because the threshold was set above the actual failure point the whole time.
+
+**Finding 3 - the agent's diagnosis embellished beyond its own verified evidence.** Given
+the real incident, the agent (now using the upgraded rubric-based confidence validator)
+produced an 85%-confidence, three-independent-signal diagnosis - technically correct on
+root cause. But its narrative called this a "connection leak" that "happened at least three
+separate times in the past hour." In reality it was one deliberate 240-second test, and the
+"three times" almost certainly came from three repeated `FATAL` log lines within that single
+run, not three distinct incidents. The rubric-scored confidence was legitimately earned; the
+prose around it still went further than the evidence supported - the same pattern
+documented earlier in this README, recurring in a newer, more sophisticated version of the
+agent.
+
+**Finding 4 - the proposed fix's diff would have destroyed live infrastructure.** The
+agent's PR framed itself as a one-line change (`max_connections` 20 -> 100), and even
+proactively cited a technical justification: "AWS's default formula yields ~87 for this
+instance class." That specific number was independently verified against AWS's actual
+formula (`DBInstanceClassMemory / 9531392`) for a `db.t4g.micro`'s real 1 GiB of RAM - the
+real default is **~112**, not ~87. The cited fact was fabricated, even though the
+recommended value (100) happened to still land in a safe range purely by chance. Far more
+seriously: the actual diff didn't just change one value. It deleted the entire
+`aws_db_subnet_group`, the database security group, and the `aws_db_instance` resource
+itself from the file, leaving only the parameter group. Applying this PR would have
+destroyed the live RDS instance, its subnet group, and its security group. This was caught
+two ways: `terraform validate` correctly failed in CI (broken references in `outputs.tf` to
+the now-deleted `aws_db_instance.this`), and a full manual read of the diff before merging -
+not just trusting the PR's narrative, which described this as a simple, safe, one-line
+parameter change. The PR was closed, unmerged. Nothing was ever applied. This is the
+starkest evidence in this entire project for why a human has to read the actual diff, not
+the AI's summary of it.
 
 ## Watch mode, tested live
 
