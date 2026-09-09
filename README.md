@@ -130,7 +130,7 @@ terraform/
   main.tf              # root module wiring vpc/alb/ecs/rds/monitoring/budget/safety
   variables.tf
   outputs.tf
-  backend.tf           # S3 remote state backend (commented out until first deploy)
+  backend.tf           # S3 remote state backend, commented out - migration to it is a deliberate, not-yet-done future step
   providers.tf
   modules/
     vpc/                # networking

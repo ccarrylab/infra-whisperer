@@ -168,15 +168,44 @@ jobs:
 
       - name: Post-Apply Validation
         id: validate
+        working-directory: terraform
         run: |
-          echo "Running post-apply health checks..."
-          # TODO: Add your health check script here
-          # Examples:
-          # - curl the ALB health endpoint
-          # - Check CloudWatch alarm states
-          # - Verify ECS service is stable
-          # - Check RDS connection count
-          echo "Health checks passed (placeholder)"
+          set -euo pipefail
+          echo "Running real post-apply health checks..."
+
+          ALB_DNS=$(terraform output -raw alb_dns_name)
+          ECS_CLUSTER=$(terraform output -raw ecs_cluster_name)
+          ECS_SERVICE=$(terraform output -raw ecs_service_name)
+
+          echo "Checking ALB responds..."
+          HTTP_CODE=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 "http://${ALB_DNS}")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "FAILED: ALB returned HTTP $HTTP_CODE, expected 200"
+            exit 1
+          fi
+          echo "ALB healthy (HTTP $HTTP_CODE)"
+
+          echo "Checking ECS service is stable..."
+          COUNTS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query "services[0].[desiredCount,runningCount]" --output text)
+          DESIRED=$(echo "$COUNTS" | cut -f1)
+          RUNNING=$(echo "$COUNTS" | cut -f2)
+          if [ "$DESIRED" != "$RUNNING" ]; then
+            echo "FAILED: ECS desired=$DESIRED running=$RUNNING - not stable"
+            exit 1
+          fi
+          echo "ECS stable (desired=$DESIRED, running=$RUNNING)"
+
+          echo "Checking no monitored alarms are in ALARM state..."
+          ALARM_STATES=$(aws cloudwatch describe-alarms --alarm-name-prefix infra-whisperer \
+            --state-value ALARM --query "MetricAlarms[].AlarmName" --output text)
+          if [ -n "$ALARM_STATES" ]; then
+            echo "FAILED: alarms currently in ALARM state: $ALARM_STATES"
+            exit 1
+          fi
+          echo "No alarms firing"
+
+          echo "All post-apply health checks passed"
 
       - name: Notify on Failure
         if: failure()
