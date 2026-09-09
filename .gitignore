@@ -31,3 +31,9 @@ __pycache__/
 # Terraform plan files
 tfplan
 *.tfplan
+
+# Python virtual environment
+.venv/
+
+# macOS
+.DS_Store
