@@ -17,7 +17,7 @@ set -euo pipefail
 CLUSTER="infra-whisperer-cluster"
 SERVICE="infra-whisperer-service"
 
-REQUIRED_VARS=(ANTHROPIC_API_KEY GITHUB_TOKEN GITHUB_REPO AGENT_DIAGNOSIS_ROLE_ARN AGENT_PLAN_ROLE_ARN)
+REQUIRED_VARS=(ANTHROPIC_API_KEY GITHUB_TOKEN GITHUB_REPO AGENT_DIAGNOSIS_ROLE_ARN AGENT_PLAN_ROLE_ARN TF_VAR_agent_trusted_principal_arn)
 for v in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!v:-}" ]; then
     echo "Missing required env var: $v"
@@ -35,10 +35,10 @@ echo ""
 
 echo "Step 1/5: Ensuring clean Terraform state..."
 cd terraform
-terraform init > /dev/null 2>&1 || true
-terraform apply -auto-approve > /dev/null 2>&1 || true
+terraform init
+terraform apply -auto-approve
 cd ..
-echo "  Baseline restored."
+echo "  Baseline restored (confirmed, not assumed - a failure above would have stopped this script)."
 echo ""
 
 echo "Step 2/5: Injecting real failure (revoking ALB->ECS security group ingress rule)..."
