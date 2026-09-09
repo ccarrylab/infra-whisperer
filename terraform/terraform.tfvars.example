@@ -22,3 +22,18 @@ budget_alert_email  = "you@example.com"
 alarm_sns_email     = "you@example.com"
 
 db_password         = "CHANGE_ME_use_a_real_secret_or_TF_VAR_db_password_env_var"
+
+# --- GitHub OIDC scoping (safety module) ---
+# These default to "ccarrylab"/"infra-whisperer" in variables.tf. If you're
+# reusing this project in your own fork or a different repo, you MUST
+# override these, or the IAM trust policies will scope themselves to the
+# original repo instead of yours, and GitHub Actions authentication will
+# fail with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+# github_org  = "your-github-username-or-org"
+# github_repo = "your-repo-name"
+
+# --- Agent's local/CLI identity for the diagnosis role ---
+# NOT set here - set via an environment variable instead, since it's the ARN
+# of a real IAM principal and this file may end up shared/pasted more freely
+# than a shell env var:
+#   export TF_VAR_agent_trusted_principal_arn="arn:aws:iam::YOUR_ACCOUNT_ID:user/your-iam-user"
